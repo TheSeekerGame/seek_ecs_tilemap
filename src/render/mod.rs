@@ -38,51 +38,41 @@ pub(crate) fn plugin(app: &mut App) {
         warn!("Failed to get render app for tilemap_renderer");
         return;
     };
-
-    render_app.add_systems(ExtractSchedule, extract_tilemap_chunks);
 }
 
-// ideally we don't want to have to copy the entire tilemap from the cpu to the render world.
-// not when we can just copy over the changes, so this runs right where the render world copies
-// stuff from the main world.
+// This preprocess all the tiles on the main world, running the expensive change detection there
+// to give us a compressed set of changes, the tilemapchunks
 
-// It might make sense to have another step after this that runs entirely in the render
-// world
+// These are then processed at some point and minimal data is sent from them to the render world
 
-fn extract_tilemap_chunks(
-    // I *think that queries can be done line this... correct me if I am wrong here though.
-    mut q_map_main: Query<(Entity, &TilemapChunks, &TilemapSize)>,
-    mut q_map: Query<(&TilemapChunks, &TilemapSize)>,
-    q_tile: Extract<
-        Query<
-            (
-                &TilemapId,
-                &TilePos,
-                &TileTextureIndex,
-                &TileColor,
-                &TileFlip,
-                &TileVisible,
-            ),
-            Or<(
-                Changed<TileTextureIndex>,
-                Changed<TileColor>,
-                Changed<TileFlip>,
-                Changed<TileVisible>,
-            )>,
-        >,
+// The render world then uploads this data to the gpu.
+
+fn update_tilemap_chunks(
+    mut q_map: Query<(&mut TilemapChunks, &TilemapSize)>,
+    q_tile: Query<
+        (
+            &TilemapId,
+            &TilePos,
+            &TileTextureIndex,
+            &TileColor,
+            &TileFlip,
+            &TileVisible,
+        ),
+        Or<(
+            Changed<TileTextureIndex>,
+            Changed<TileColor>,
+            Changed<TileFlip>,
+            Changed<TileVisible>,
+        )>,
     >,
-    mut commands: Commands,
 ) {
     // first, init things if necessary
-    for (entity, main_chunks, main_size) in q_map_main.iter() {
-        if !main_chunks.is_added() {
+    for (mut chunks, size) in &mut q_map {
+        if !chunks.is_added() {
             continue;
         }
-        let mut tile_map_chunk_entity = commands.get_or_spawn(entity);
-        tile_map_chunk_entity.insert((main_chunks, main_size))
         // TODO: maybe be smarter about this, don't hardcode 2048x2048
     }
-
     // now, update any changed tiles
     // memoize tilemap lookup for perf
     let mut last_map_id = None;
