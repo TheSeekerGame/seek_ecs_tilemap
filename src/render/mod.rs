@@ -22,13 +22,7 @@ use bevy::render::render_phase::{
 };
 use bevy::render::render_resource::binding_types::{sampler, texture_2d, uniform_buffer};
 use bevy::render::render_resource::{
-    BindGroupLayout, BindGroupLayoutEntries, BlendState, Buffer, BufferInitDescriptor,
-    BufferUsages, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, FrontFace,
-    ImageDataLayout, IndexFormat, PipelineCache, PolygonMode, PrimitiveState, RenderPassDescriptor,
-    RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages, SpecializedMeshPipeline,
-    SpecializedMeshPipelineError, SpecializedMeshPipelines, SpecializedRenderPipeline,
-    SpecializedRenderPipelines, TextureFormat, TextureSampleType, TextureViewDescriptor,
-    VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode,
+    BindGroupLayout, BindGroupLayoutEntries, BlendState, Buffer, BufferInitDescriptor, BufferUsages, CachedRenderPipelineId, ColorTargetState, ColorWrites, FragmentState, FrontFace, ImageDataLayout, IndexFormat, PipelineCache, PolygonMode, PrimitiveState, RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages, SpecializedMeshPipeline, SpecializedMeshPipelineError, SpecializedMeshPipelines, SpecializedRenderPipeline, SpecializedRenderPipelines, Texture, TextureAspect, TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexAttribute, VertexBufferLayout, VertexFormat, VertexState, VertexStepMode
 };
 use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
 use bevy::render::texture::{
@@ -54,7 +48,95 @@ pub(crate) fn plugin(app: &mut App) {
     };
 
     render_app.init_resource::<SpecializedRenderPipelines<TileMapPipeline>>();
-    render_app.add_systems(ExtractSchedule, extract_tilemap_chunks);
+    render_app.add_systems(ExtractSchedule, extract_tilemaps);
+    render_app.add_systems(Render,
+        prepare_tilemap_chunks
+            .in_set(RenderSet::PrepareResources)
+    );
+}
+
+/// GPU representation of TilemapChunks
+struct GpuTilemapChunks {
+    texture: Texture,
+    texture_view: TextureView,
+}
+
+/// Minimal representation needed for rendering.
+pub struct ExtractedTileMap {
+    pub transform: GlobalTransform,
+    pub chunks: TilemapChunks,
+    pub gpu_chunks: Option<GpuTilemapChunks>,
+}
+
+// Not sure if we want to use a hashmap.
+// the benefit for bevy_sprite was that it could be cleared, so you get "free" destruction detection.
+// But we want to preserve maps.
+#[derive(Resource, Default)]
+pub struct ExtractedTileMaps {
+    pub map: EntityHashMap<ExtractedTileMap>,
+}
+
+impl GpuTilemapChunks {
+    fn new(device: &RenderDevice) -> Self {
+        let desc_texture = TextureDescriptor {
+            label: Some("seek_ecs_tilemap_chunks"),
+            size: chunks.texture_size(),
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba32Uint,
+            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc_texture);
+        let desc_view = TextureViewDescriptor {
+            label: Some("seek_ecs_tilemap_chunks"),
+            format: Some(TextureFormat::Rgba32Uint),
+            dimension: Some(TextureViewDimension::D2Array),
+            aspect: TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        };
+        let texture_view = texture.create_view(&desc_view);
+        Self {
+            texture,
+            texture_view,
+        }
+    }
+    fn copy_all(&mut self, queue: &RenderQueue, chunks: &TilemapChunks) {
+        for chunk in chunks.chunks.iter() {
+            let mut data_start = 0;
+            for sc_y in (0..32).take(chunks.n_subchunks.y as usize) {
+                for sc_x in (0..32).take(chunks.n_subchunks.y as usize) {
+                    let data_end = data_start + TilemapChunks::SUBCHUNK_DATA_LEN;
+                    let data = &chunk.data[data_start..data_end];
+                    // TODO: queue.write_texture(texture, data, data_layout, size);
+                    data_start = data_end;
+                }
+            }
+        }
+    }
+    fn copy_dirty(&mut self, queue: &RenderQueue, chunks: &TilemapChunks) {
+        for chunk in chunks.chunks.iter() {
+            let mut data_start = 0;
+            for (sc_y, row_bitmap) in chunk.dirty_bitmap.iter()
+                .copied()
+                .take(chunks.n_subchunks.y as usize)
+                .enumerate()
+            {
+                for sc_x in (0..32).take(chunks.n_subchunks.x as usize) {
+                    let data_end = data_start + TilemapChunks::SUBCHUNK_DATA_LEN;
+                    if row_bitmap & (1 << sc_x) != 0 {
+                        let data = &chunk.data[data_start..data_end];
+                        // TODO: queue.write_texture(texture, data, data_layout, size);
+                    }
+                    data_start = data_end;
+                }
+            }
+        }
+    }
 }
 
 // This preprocess all the tiles on the main world, running the expensive change detection there
@@ -88,7 +170,7 @@ fn update_tilemap_chunks(
         if !chunks.is_added() {
             continue;
         }
-        // TODO: maybe be smarter about this, don't hardcode 2048x2048
+        todo!();
     }
     // now, update any changed tiles
     // memoize tilemap lookup for perf
@@ -115,52 +197,57 @@ fn update_tilemap_chunks(
     }
 }
 
-/// Minimal representation needed for rendering.
-pub struct ExtractedTileMap {
-    pub transform: GlobalTransform,
-    /// Select an area of the texture
-    pub chunk: TilemapChunk,
-    /// For cases where additional [`ExtractedTileMaps`] are created during extraction, this stores the
-    /// entity that caused that creation for use in determining visibility.
-    pub original_entity: Option<Entity>,
-}
-
-// Not sure if we want to use a hashmap.
-// the benefit for bevy_sprite was that it could be cleared, so you get "free" destruction detection.
-// But we want to preserve maps.
-#[derive(Resource, Default)]
-pub struct ExtractedTileMaps {
-    pub map: EntityHashMap<ExtractedTileMap>,
-}
-
 // A temporary implementation that just initializes placeholders onto the gpu
-pub fn extract_tilemap_chunks(
-    mut commands: Commands,
-    mut extracted_tilemap: ResMut<ExtractedTileMaps>,
+pub fn extract_tilemaps(
+    mut extracted_tilemaps: ResMut<ExtractedTileMaps>,
     // todo: figure out how to get Tile Texture data, and how it should be formatted
     //  we probably want to put that into a different extraction function.
     //  since it should change very rarely.
     tilemap_query: Extract<Query<(Entity, &ViewVisibility, &TilemapChunks, &GlobalTransform)>>,
 ) {
-    for (entity, view_visibility, chunk, transform) in tilemap_query.iter() {
+    for (entity, view_visibility, chunks, transform) in tilemap_query.iter() {
+        // TODO: in order for this to actually work, we need a system in the
+        // main world that knows how to do frustum culling for tilemaps
         if !view_visibility.get() {
             continue;
         }
 
-        match extracted_tilemap.map.entry(entity) {
-            Entry::Occupied(o_map) => {
-                // Todo: we can transfer all "dirty" parts of the chunk here.
+        match extracted_tilemaps.map.entry(entity) {
+            Entry::Occupied(mut o_map) => {
+                // Transfer all "dirty" parts of the chunks here.
+                let map = o_map.get_mut();
+                map.transform = transform.clone();
+                map.chunks.copy_dirty(chunks);
             }
             Entry::Vacant(v_map) => {
-                // otherwise we just copy the whole thing, since its the first time.
+                // otherwise copy all chunks, since it's the first time.
                 v_map.insert(ExtractedTileMap {
-                    transform: *transform,
-                    // todo: decide how to handle multiple chunks.
-                    chunk: chunk.chunks[0].clone(),
-                    original_entity: None,
+                    transform: transform.clone(),
+                    chunks: chunks.clone(),
+                    gpu_chunks: None, // This will be handled in Prepare
                 });
             }
         };
+    }
+}
+
+fn prepare_tilemap_chunks(
+    device: Res<RenderDevice>,
+    queue: Res<RenderQueue>,
+    mut extracted_tilemaps: ResMut<ExtractedTileMaps>,
+) {
+    for map in extracted_tilemaps.map.values_mut() {
+        if let Some(gpu_chunks) = &mut map.gpu_chunks {
+            // Texture already exists in GPU memory.
+            // Update it with any dirty data!
+            gpu_chunks.copy_dirty(&queue, &map.chunks);
+        } else {
+            // First run; setup the GPU texture.
+            let mut gpu_chunks = GpuTilemapChunks::new(&device);
+            gpu_chunks.copy_all(&queue, &map.chunks);
+            map.chunks.clear_all_dirty_bitmaps();
+            map.gpu_chunks = Some(gpu_chunks);
+        }
     }
 }
 

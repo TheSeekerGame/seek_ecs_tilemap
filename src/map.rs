@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::ecs::entity::MapEntities;
 use bevy::ecs::reflect::ReflectMapEntities;
+use bevy::render::render_resource::Extent3d;
 
 use crate::tiles::*;
 
@@ -269,6 +270,10 @@ pub(crate) struct TilemapChunk {
 }
 
 impl TilemapChunks {
+    /// Length of a contiguous slice representing one sub-chunk
+    /// Sub-chunks are always 64x64 * 16 bytes (TextureFormat::Rgba32Uint)
+    pub(crate) const SUBCHUNK_DATA_LEN: usize = 64 * 64 * 16;
+
     pub(crate) fn init(
         &mut self,
         map_size: UVec2,
@@ -280,9 +285,8 @@ impl TilemapChunks {
         self.n_chunks.y = map_size.y.div_ceil(self.chunk_size.y);
         self.n_subchunks.x = self.chunk_size.x.div_ceil(64);
         self.n_subchunks.y = self.chunk_size.y.div_ceil(64);
-        let chunk_data_size = 16
-            * self.n_subchunks.y as usize * 64
-            * self.n_subchunks.x as usize * 64;
+        let chunk_data_size = Self::SUBCHUNK_DATA_LEN *
+            self.n_subchunks.y as usize * self.n_subchunks.x as usize;
         let n_chunks = self.n_chunks.y as usize * self.n_chunks.x as usize;
         self.chunks = Vec::from_iter(
             (0..n_chunks).map(|_| TilemapChunk {
@@ -323,5 +327,53 @@ impl TilemapChunks {
             ((flip.d as u8) << 3) |
             ((visible.0 as u8) << 0);
         chunk.dirty_bitmap[subchunk_y as usize] |= 1 << subchunk_x;
+    }
+
+    /// Transfers dirty data efficiently from `source` to `self`
+    ///
+    /// Sub-chunk data corresponding to bits set in the `source`'s
+    /// dirty bitmasks will be copied over, overwriting the respective
+    /// data in `self`.
+    ///
+    /// The dirty bitmasks in `self` will be set equal to those
+    /// in `source` (thus indicating which sub-chunks were copied).
+    ///
+    /// `self` must have equal dimensions and chunk layout as `source`.
+    pub(crate) fn copy_dirty(&mut self, source: &Self) {
+        debug_assert_eq!(self.chunk_size, source.chunk_size);
+        debug_assert_eq!(self.n_chunks, source.n_chunks);
+        debug_assert_eq!(self.n_subchunks, source.n_subchunks);
+
+        for (dst_chunk, src_chunk) in self.chunks.iter_mut().zip(other.chunks.iter()) {
+            *dst_chunk.dirty_bitmap = *src_chunk.dirty_bitmap;
+            let mut data_start = 0;
+            for (sc_y, row_bitmap) in src_chunk.dirty_bitmap.iter()
+                .copied()
+                .take(self.n_subchunks.y as usize)
+                .enumerate()
+            {
+                for sc_x in (0..32).take(self.n_subchunks.x as usize) {
+                    let data_end = data_start + Self::SUBCHUNK_DATA_LEN;
+                    if row_bitmap & (1 << sc_x) != 0 {
+                        let dst_data = &mut dst_chunk.data[data_start..data_end];
+                        let src_data = &src_chunk.data[data_start..data_end];
+                        dst_data.copy_from_slice(src_data);
+                    }
+                    data_start = data_end;
+                }
+            }
+        }
+    }
+    pub(crate) fn texture_size(&self) -> Extent3d {
+        Extent3d {
+            width: self.n_subchunks.x * 64,
+            height: self.n_subchunks.y * 64,
+            depth_or_array_layers: self.n_chunks.y * self.n_chunks.x,
+        }
+    }
+    pub(crate) fn clear_all_dirty_bitmaps(&mut self) {
+        for chunk in self.chunks.iter_mut() {
+            chunk.dirty_bitmap = default();
+        }
     }
 }
