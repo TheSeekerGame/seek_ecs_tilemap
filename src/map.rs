@@ -1,14 +1,13 @@
-use bevy::prelude::*;
 use bevy::ecs::entity::MapEntities;
 use bevy::ecs::reflect::ReflectMapEntities;
+use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
 
 use crate::tiles::*;
 
-pub(crate) fn plugin(_app: &mut App) {
-}
+pub(crate) fn plugin(_app: &mut App) {}
 
-#[derive(Bundle)]
+#[derive(Bundle, Default)]
 pub struct TilemapBundle {
     pub grid_size: TilemapGridSize,
     pub map_type: TilemapType,
@@ -274,26 +273,20 @@ impl TilemapChunks {
     /// Sub-chunks are always 64x64 * 16 bytes (TextureFormat::Rgba32Uint)
     pub(crate) const SUBCHUNK_DATA_LEN: usize = 64 * 64 * 16;
 
-    pub(crate) fn init(
-        &mut self,
-        map_size: UVec2,
-        chunk_size: UVec2,
-    ) {
+    pub(crate) fn init(&mut self, map_size: UVec2, chunk_size: UVec2) {
         assert!(chunk_size.x <= 2048 && chunk_size.y <= 2048);
         self.chunk_size = chunk_size.min(map_size);
         self.n_chunks.x = map_size.x.div_ceil(self.chunk_size.x);
         self.n_chunks.y = map_size.y.div_ceil(self.chunk_size.y);
         self.n_subchunks.x = self.chunk_size.x.div_ceil(64);
         self.n_subchunks.y = self.chunk_size.y.div_ceil(64);
-        let chunk_data_size = Self::SUBCHUNK_DATA_LEN *
-            self.n_subchunks.y as usize * self.n_subchunks.x as usize;
+        let chunk_data_size =
+            Self::SUBCHUNK_DATA_LEN * self.n_subchunks.y as usize * self.n_subchunks.x as usize;
         let n_chunks = self.n_chunks.y as usize * self.n_chunks.x as usize;
-        self.chunks = Vec::from_iter(
-            (0..n_chunks).map(|_| TilemapChunk {
-                data: vec![0; chunk_data_size],
-                dirty_bitmap: Box::new([u32::MAX; 32]),
-            })
-        );
+        self.chunks = Vec::from_iter((0..n_chunks).map(|_| TilemapChunk {
+            data: vec![0; chunk_data_size],
+            dirty_bitmap: Box::new([u32::MAX; 32]),
+        }));
     }
     pub(crate) fn set_tiledata_at(
         &mut self,
@@ -321,11 +314,10 @@ impl TilemapChunks {
         let color_bytes = LinearRgba::from(color.0).as_u32().to_le_bytes();
         tile_bytes[0..4].copy_from_slice(&index_bytes);
         tile_bytes[4..8].copy_from_slice(&color_bytes);
-        tile_bytes[8] =
-            ((flip.x as u8) << 1) |
-            ((flip.y as u8) << 2) |
-            ((flip.d as u8) << 3) |
-            ((visible.0 as u8) << 0);
+        tile_bytes[8] = ((flip.x as u8) << 1)
+            | ((flip.y as u8) << 2)
+            | ((flip.d as u8) << 3)
+            | ((visible.0 as u8) << 0);
         chunk.dirty_bitmap[subchunk_y as usize] |= 1 << subchunk_x;
     }
 
@@ -344,10 +336,12 @@ impl TilemapChunks {
         debug_assert_eq!(self.n_chunks, source.n_chunks);
         debug_assert_eq!(self.n_subchunks, source.n_subchunks);
 
-        for (dst_chunk, src_chunk) in self.chunks.iter_mut().zip(other.chunks.iter()) {
+        for (dst_chunk, src_chunk) in self.chunks.iter_mut().zip(source.chunks.iter()) {
             *dst_chunk.dirty_bitmap = *src_chunk.dirty_bitmap;
             let mut data_start = 0;
-            for (sc_y, row_bitmap) in src_chunk.dirty_bitmap.iter()
+            for (sc_y, row_bitmap) in src_chunk
+                .dirty_bitmap
+                .iter()
                 .copied()
                 .take(self.n_subchunks.y as usize)
                 .enumerate()

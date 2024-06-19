@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy::render::RenderApp;
+use bevy::sprite::SpritePipeline;
 
 /// A module which contains tilemap components.
 pub mod map;
@@ -15,7 +17,7 @@ impl Plugin for TilemapPlugin {
     fn build(&self, app: &mut App) {
         use crate::map::*;
         use crate::tiles::*;
-        app .register_type::<TilemapId>()
+        app.register_type::<TilemapId>()
             .register_type::<TilemapSize>()
             // .register_type::<TilemapTexture>()
             .register_type::<TilemapTileSize>()
@@ -31,14 +33,11 @@ impl Plugin for TilemapPlugin {
             .register_type::<TileStorage>()
             .register_type::<TilePosOld>();
 
-        app.add_plugins((
-            crate::map::plugin,
-            crate::tiles::plugin,
-        ));
+        app.add_plugins((crate::map::plugin, crate::tiles::plugin));
         #[cfg(feature = "render")]
         app.add_plugins((
-            crate::chunk::plugin,
-            crate::render::plugin,
+            //crate::chunk::plugin,
+            crate::render::TileMapRendererPlugin,
         ));
     }
 }
