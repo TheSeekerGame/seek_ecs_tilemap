@@ -22,10 +22,9 @@ use bevy::render::render_phase::{
 };
 use bevy::render::render_resource::binding_types::{sampler, texture_2d, uniform_buffer};
 use bevy::render::render_resource::{
-    BindGroup, BindGroupLayout, BindGroupLayoutEntries, BlendState, Buffer, BufferAddress,
-    BufferDescriptor, BufferInitDescriptor, BufferSlice, BufferUsages, CachedRenderPipelineId,
-    ColorTargetState, ColorWrites, Extent3d, FragmentState, FrontFace, ImageDataLayout,
-    IndexFormat, MultisampleState, PipelineCache, PolygonMode, PrimitiveState, RawBufferVec,
+    BindGroup, BindGroupLayout, BindGroupLayoutEntries, BlendState, Buffer, BufferInitDescriptor,
+    BufferUsages, CachedRenderPipelineId, ColorTargetState, ColorWrites, Extent3d, FragmentState,
+    FrontFace, ImageDataLayout, IndexFormat, PipelineCache, PolygonMode, PrimitiveState,
     RenderPassDescriptor, RenderPipelineDescriptor, Sampler, SamplerBindingType, ShaderStages,
     SpecializedMeshPipeline, SpecializedMeshPipelineError, SpecializedMeshPipelines,
     SpecializedRenderPipeline, SpecializedRenderPipelines, Texture, TextureAspect,
@@ -43,7 +42,7 @@ use bevy::render::view::{
 use bevy::render::{Extract, Render, RenderApp, RenderSet};
 use bevy::sprite::{
     DrawSprite, DrawSpriteBatch, ExtractedSprite, ExtractedSprites, ImageBindGroups,
-    Mesh2dViewBindGroup, SetSpriteTextureBindGroup, SetSpriteViewBindGroup, SpritePipeline,
+    SetSpriteTextureBindGroup, SetSpriteViewBindGroup, SpritePipeline,
 };
 use bevy::utils::hashbrown::hash_map::Entry;
 use std::borrow::Cow;
@@ -78,11 +77,9 @@ impl Plugin for TileMapRendererPlugin {
 }
 
 /// GPU representation of TilemapChunks
-#[derive(Component)]
 struct GpuTilemapChunks {
     texture: Texture,
     texture_view: TextureView,
-    vertex_buffer: Buffer,
 }
 
 /// Minimal representation needed for rendering.
@@ -99,14 +96,13 @@ pub struct ExtractedTileMaps {
 
 impl GpuTilemapChunks {
     fn new(device: &RenderDevice, chunks: &TilemapChunks) -> Self {
-        let size = Extent3d {
-            width: 1000,
-            height: 1000,
-            depth_or_array_layers: 4,
-        }; //chunks.texture_size(),
         let desc_texture = TextureDescriptor {
             label: Some("seek_ecs_tilemap_chunks"),
-            size,
+            size: Extent3d {
+                width: 1000,
+                height: 1000,
+                depth_or_array_layers: 4,
+            }, //chunks.texture_size(),
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
@@ -126,18 +122,9 @@ impl GpuTilemapChunks {
             array_layer_count: None,
         };
         let texture_view = texture.create_view(&desc_view);
-        // Setup storage for the vertices. Even though we will only be overwriting these
-        // on the gpu
-        let vertex_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("vertex_buffer"),
-            size: (size.width * size.height * 16 * 6) as BufferAddress,
-            usage: BufferUsages::VERTEX | BufferUsages::STORAGE,
-            mapped_at_creation: true,
-        });
         Self {
             texture,
             texture_view,
-            vertex_buffer,
         }
     }
     fn copy_all(&mut self, queue: &RenderQueue, chunks: &TilemapChunks) {
@@ -390,10 +377,7 @@ impl FromWorld for TileMapPipeline {
 
 // Specialize the pipeline with size/runtime configurable data. I think.
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct TileMapPipelineKey {
-    msaa_samples: u32,
-}
-
+pub struct TileMapPipelineKey;
 impl SpecializedRenderPipeline for TileMapPipeline {
     type Key = TileMapPipelineKey;
 
@@ -421,7 +405,7 @@ impl SpecializedRenderPipeline for TileMapPipeline {
 
         RenderPipelineDescriptor {
             label: Some("TileMapPipeline".into()),
-            layout: vec![/*self.tilemap_layout.clone(), self.tiles_layout.clone()*/],
+            layout: vec![self.tilemap_layout.clone(), self.tiles_layout.clone()],
             push_constant_ranges: vec![],
             vertex: VertexState {
                 shader: self.shader.clone(),
@@ -450,11 +434,7 @@ impl SpecializedRenderPipeline for TileMapPipeline {
                 strip_index_format: None,
             },
             depth_stencil: None,
-            multisample: MultisampleState {
-                count: key.msaa_samples,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
+            multisample: Default::default(),
         }
     }
 }
@@ -465,7 +445,6 @@ fn queue_tilemaps(
     tilemap_pipeline: Res<TileMapPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<TileMapPipeline>>,
     pipeline_cache: Res<PipelineCache>,
-    msaa: Res<Msaa>,
     mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     mut views: Query<(
         Entity,
@@ -482,13 +461,7 @@ fn queue_tilemaps(
             continue;
         };
 
-        let pipeline = pipelines.specialize(
-            &pipeline_cache,
-            &tilemap_pipeline,
-            TileMapPipelineKey {
-                msaa_samples: msaa.samples(),
-            },
-        );
+        let pipeline = pipelines.specialize(&pipeline_cache, &tilemap_pipeline, TileMapPipelineKey);
 
         transparent_phase
             .items
@@ -529,13 +502,13 @@ fn prepare_tilemap_image_bind_groups() {}
 /// [`RenderCommand`]s for TileMap rendering.
 pub type DrawTilemap = (
     SetItemPipeline,
-    //SetTilemapViewBindGroup<0>,
+    SetTilemapViewBindGroup<0>,
     //SetTilemapTextureBindGroup<1>,
     //SetTilesTextureBindGroup<2>,
     DrawTileMap,
 );
 
-/*#[derive(Component)]
+#[derive(Component)]
 pub struct TilemapViewBindGroup {
     pub value: BindGroup,
 }
@@ -556,7 +529,7 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilemapViewBindGroup<
         pass.set_bind_group(I, &tilemap_view_bind_group.value, &[view_uniform.offset]);
         RenderCommandResult::Success
     }
-}*/
+}
 
 // Todo: setup the TilemapTextureArrayBindGroup
 /*pub struct SetTilemapTextureBindGroup<const I: usize>;
@@ -632,21 +605,10 @@ impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
         maps: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        // Todo: lifetime issue here is kinda wierd and anoying to deal with.
-        //  also might be a case for https://crates.io/crates/polonius-the-crab ?
-        //  alternatively would need to use entities to store the relevant data.
-        //  Note: compiles fine without line 649
         let Some(tile_map) = maps.map.get(&item.entity()) else {
             return RenderCommandResult::Failure;
         };
-        let Some(gpu_map) = &tile_map.gpu_chunks else {
-            return RenderCommandResult::Failure;
-        };
-        let x = gpu_map.vertex_buffer.slice(..);
-
-        // need to tell the gpu where the vertex buffer the shader is using is,
-        // even if we aren't writing to it on the cpu side
-        pass.set_vertex_buffer(0, x);
+        println!("drawing: {}", &item.entity());
         pass.draw(0..6 * tile_map.chunks.chunk_size.element_product(), 0..1);
         RenderCommandResult::Success
     }
