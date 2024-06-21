@@ -1,6 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::RenderApp;
-use bevy::sprite::SpritePipeline;
 
 /// A module which contains tilemap components.
 pub mod map;

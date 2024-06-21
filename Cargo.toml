@@ -22,13 +22,16 @@ bitflags = "2.5.0"
 serde = { version = "1", features = ["derive"], optional = true }
 
 [dependencies.bevy]
-git = "https://github.com/bevyengine/bevy"
+version = "0.14.0-rc.3"
 default-features = false
 
 [dev-dependencies.bevy]
-git = "https://github.com/bevyengine/bevy"
+version = "0.14.0-rc.3"
 default-features = true
 features = [
     "x11",
     "wayland",
 ]
+
+[profile.dev]
+opt-level = 3

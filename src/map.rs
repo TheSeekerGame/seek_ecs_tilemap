@@ -314,10 +314,10 @@ impl TilemapChunks {
         let color_bytes = LinearRgba::from(color.0).as_u32().to_le_bytes();
         tile_bytes[0..4].copy_from_slice(&index_bytes);
         tile_bytes[4..8].copy_from_slice(&color_bytes);
-        tile_bytes[8] = ((flip.x as u8) << 1)
+        tile_bytes[8] = ((visible.0 as u8) << 0)
+            | ((flip.x as u8) << 1)
             | ((flip.y as u8) << 2)
-            | ((flip.d as u8) << 3)
-            | ((visible.0 as u8) << 0);
+            | ((flip.d as u8) << 3);
         chunk.dirty_bitmap[subchunk_y as usize] |= 1 << subchunk_x;
     }
 
