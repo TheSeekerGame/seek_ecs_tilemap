@@ -80,7 +80,7 @@ fn vertex(input: VertexInput) -> VertexOutput {
     let check_visibility = tile_texel.b & (1u << 0u);
     let check_alpha = tile_texel.g & 0xFF000000;
     if check_visibility == 0u || check_alpha == 0u {
-        //return output; // FIXME: temporary
+        return output; // FIXME: temporary
     }
 
     output.index_color = tile_texel.rg;

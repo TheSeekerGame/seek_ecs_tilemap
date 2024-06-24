@@ -51,7 +51,7 @@ fn setup(mut commands: Commands) {
                 position: TilePos::new(x, y),
                 texture_index: TileTextureIndex(0),
                 tilemap_id: TilemapId(e_tilemap),
-                visible: TileVisible(true),
+                visible: TileVisible(y % 2 == 0 || x % 2 == 0),
                 flip: TileFlip { x: false, y: false, d: false},
                 color: TileColor(Srgba::rgb_u8(((x *25) % 256) as u8, ((y * 25) % 256) as u8, 0).into()),
                 old_position: default(),
