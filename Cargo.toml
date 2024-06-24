@@ -20,6 +20,7 @@ serde = ["dep:serde"]
 [dependencies]
 bitflags = "2.5.0"
 serde = { version = "1", features = ["derive"], optional = true }
+rand = "0.8"
 
 [dependencies.bevy]
 version = "0.14.0-rc.3"

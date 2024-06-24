@@ -1,6 +1,8 @@
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin};
 use bevy::prelude::*;
+use bevy::render::Extract;
 use bevy::window::WindowMode;
+use rand::random;
 use seek_ecs_tilemap::map::*;
 use seek_ecs_tilemap::tiles::*;
 use seek_ecs_tilemap::{TilemapBundle, TilemapPlugin};
@@ -17,6 +19,7 @@ fn main() {
     }));
     app.add_plugins(TilemapPlugin);
     app.add_systems(Startup, setup);
+    app.add_systems(Update, updates);
     app.add_plugins(LogDiagnosticsPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default());
     app.run();
@@ -36,7 +39,7 @@ fn setup(mut commands: Commands) {
             size: TilemapSize::new(width, height),
             spacing: Default::default(),
             storage: Default::default(),
-            tile_size: TilemapTileSize::new(8.0, 8.0),
+            tile_size: TilemapTileSize::new(10.0, 8.0),
             chunks: TilemapChunks::default(),
             transform: Default::default(),
             global_transform: Default::default(),
@@ -58,4 +61,30 @@ fn setup(mut commands: Commands) {
             });
         }
     }
+}
+
+
+pub fn updates(mut q_tile: Query<
+    (
+        &TilemapId,
+        &TilePos,
+        &mut TileColor,
+        &mut TileFlip,
+        &mut TileVisible,
+    )>, mut idx: Local<usize>,
+) {
+    let Some((id, pos, mut color, flip, mut visible)) = q_tile.iter_mut().skip(*idx).next() else {
+        *idx = 0;
+        return
+    };
+    *color = TileColor(Srgba::new(
+        random::<f32>(),
+        random::<f32>(),
+        random::<f32>(),
+        1.0,
+    ).into());
+
+    visible.0 = random::<bool>();
+
+    *idx += 1
 }
