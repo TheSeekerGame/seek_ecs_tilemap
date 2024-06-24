@@ -89,7 +89,7 @@ fn vertex(input: VertexInput) -> VertexOutput {
     // tile index, for debugging, so we can visualize the geometry.
     // The chunk texture is broken, doesn't actually seem to contain
     // the colors. After fixing it, remove this line.
-    output.index_color.y = (tile_index * 16) | 0xFF000000u;
+    // output.index_color.y = (tile_index * 16) | 0xFF000000u;
 
     let tile_vertex_model = TILE_VERT_POSITIONS[tile_vertex_index];
 

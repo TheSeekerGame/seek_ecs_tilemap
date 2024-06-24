@@ -400,8 +400,6 @@ fn queue_tilemaps(
             .items
             .reserve(extracted_tilemaps.map.len());
 
-        // Todo: finish fleshing out this function.
-        //println!("queued: {}", extracted_tilemaps.map.len());
         for (entity, extracted_tilemap) in extracted_tilemaps.map.iter() {
             /*let index = extracted_tilemap.unwrap_or(*entity).index();
 
@@ -459,7 +457,7 @@ impl GpuTilemapChunks {
         for (z, chunk) in chunks.chunks.iter().enumerate() {
             let mut data_start = 0;
             for sc_y in (0..32).take(chunks.n_subchunks.y as usize) {
-                for sc_x in (0..32).take(chunks.n_subchunks.y as usize) {
+                for sc_x in (0..32).take(chunks.n_subchunks.x as usize) {
                     let data_end = data_start + TilemapChunks::SUBCHUNK_DATA_LEN;
                     let data = &chunk.data[data_start..data_end];
                     self.copy_subchunk_data(queue, sc_x, sc_y, z as u32, data);
@@ -617,7 +615,6 @@ impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
         let n_verts = tilemap.chunks.chunk_size.element_product() * 6;
         let n_insts = tilemap.chunks.n_chunks.element_product();
         pass.draw(0..n_verts, 0..n_insts);
-        dbg!("draw!!");
         RenderCommandResult::Success
     }
 }

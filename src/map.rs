@@ -306,8 +306,8 @@ impl TilemapChunks {
         let tile_sub_y = tile_y % 64;
         let i_chunk = (chunk_y * self.n_chunks.x + chunk_x) as usize;
         let chunk = &mut self.chunks[i_chunk];
-        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize;
-        let tile_offset = subchunk_offset + (tile_sub_y * 64 + tile_sub_x) as usize;
+        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize * 64 * 64 * 16;;
+        let tile_offset = subchunk_offset + ((tile_sub_y * 64 + tile_sub_x) * 16) as usize;
         let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 16)];
         // GPUs are little endian
         let index_bytes = index.0.to_le_bytes();
