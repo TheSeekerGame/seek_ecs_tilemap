@@ -1,7 +1,7 @@
 use bevy::ecs::entity::MapEntities;
 use bevy::ecs::reflect::ReflectMapEntities;
 use bevy::prelude::*;
-use bevy::render::render_resource::Extent3d;
+use bevy::render::render_resource::{Extent3d, TextureUsages};
 
 use crate::tiles::*;
 
@@ -14,7 +14,7 @@ pub struct TilemapBundle {
     pub size: TilemapSize,
     pub spacing: TilemapSpacing,
     pub storage: TileStorage,
-    // pub texture: TilemapTexture,
+    pub texture: Tileset,
     pub tile_size: TilemapTileSize,
     pub chunks: TilemapChunks,
     pub transform: Transform,
@@ -81,6 +81,43 @@ impl From<TilemapSize> for UVec2 {
 impl From<UVec2> for TilemapSize {
     fn from(vec: UVec2) -> Self {
         TilemapSize { x: vec.x, y: vec.y }
+    }
+}
+
+#[derive(Component, Reflect, Clone, Debug, Hash, PartialEq, Eq, Default)]
+pub struct Tileset(Handle<Image>);
+
+impl Tileset {
+    pub fn handle(&self) -> &Handle<Image> {
+        &self.0
+    }
+
+    pub fn verify_ready(&self, images: &Res<Assets<Image>>) -> bool {
+        images.get(self.handle()).is_some()
+    }
+
+    /// Sets images with the `COPY_SRC` flag.
+    pub fn set_images_to_copy_src(&self, images: &mut ResMut<Assets<Image>>) {
+
+        // NOTE: We retrieve it non-mutably first to avoid triggering an `AssetEvent::Modified`
+        // if we didn't actually need to modify it
+        if let Some(image) = images.get(self.handle()) {
+            if !image
+                .texture_descriptor
+                .usage
+                .contains(TextureUsages::COPY_SRC)
+            {
+                if let Some(image) = images.get_mut(self.handle()) {
+                    image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
+                        | TextureUsages::COPY_SRC
+                        | TextureUsages::COPY_DST;
+                };
+            }
+        }
+    }
+
+    pub fn clone_weak(&self) -> Self {
+        Tileset(self.0.clone_weak())
     }
 }
 

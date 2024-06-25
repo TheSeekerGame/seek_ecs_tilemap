@@ -39,6 +39,7 @@ fn setup(mut commands: Commands) {
             size: TilemapSize::new(width, height),
             spacing: Default::default(),
             storage: Default::default(),
+            texture: Default::default(),
             tile_size: TilemapTileSize::new(10.0, 8.0),
             chunks: TilemapChunks::default(),
             transform: Default::default(),

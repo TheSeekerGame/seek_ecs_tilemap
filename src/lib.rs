@@ -6,7 +6,6 @@ pub mod map;
 pub(crate) mod render;
 /// A module which contains tile components.
 pub mod tiles;
-mod array_texture_preload;
 
 pub use crate::map::TilemapBundle;
 
@@ -18,7 +17,7 @@ impl Plugin for TilemapPlugin {
         use crate::tiles::*;
         app.register_type::<TilemapId>()
             .register_type::<TilemapSize>()
-            // .register_type::<TilemapTexture>()
+            .register_type::<Tileset>()
             .register_type::<TilemapTileSize>()
             .register_type::<TilemapGridSize>()
             .register_type::<TilemapSpacing>()

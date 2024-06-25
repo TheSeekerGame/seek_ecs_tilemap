@@ -1,3 +1,5 @@
+mod texture_array;
+
 use bevy::core_pipeline::core_2d::Transparent2d;
 use bevy::core_pipeline::core_3d::Transparent3d;
 use bevy::core_pipeline::tonemapping::{
@@ -32,6 +34,7 @@ use binding_types::texture_2d_array;
 use std::borrow::Cow;
 
 use crate::{map::*, tiles::*};
+use crate::render::texture_array::create_texture_array;
 
 pub struct TileMapRendererPlugin;
 impl Plugin for TileMapRendererPlugin {
@@ -49,6 +52,7 @@ impl Plugin for TileMapRendererPlugin {
             .init_resource::<PreparedTilemaps>()
             .add_render_command::<Transparent2d, DrawTilemap>()
             .add_systems(ExtractSchedule, extract_tilemaps)
+            .add_systems(ExtractSchedule, extract_tilemap_textures)
             .add_systems(Render, (
                 prepare_tilemaps.in_set(RenderSet::Prepare),
                 queue_tilemaps.in_set(RenderSet::Queue),
@@ -74,11 +78,61 @@ struct ExtractedTilemap {
     chunks: TilemapChunks,
     tile_size: TilemapTileSize,
     grid_size: TilemapGridSize,
+    texture: Option<ExtractedTileset>,
 }
 
 #[derive(Resource, Default)]
 struct ExtractedTilemaps {
     map: EntityHashMap<ExtractedTilemap>,
+}
+
+#[derive(Component)]
+pub(crate) struct ExtractedTileset {
+    pub tilemap_id: TilemapId,
+    pub texture_size: TilemapTextureSize,
+    pub tile_spacing: TilemapSpacing,
+    pub tile_count: u32,
+    pub texture: Tileset,
+    pub filtering: FilterMode,
+    pub format: TextureFormat,
+}
+
+impl ExtractedTileset {
+    pub fn new(
+        tilemap_entity: Entity,
+        texture: Tileset,
+        tile_size: TilemapTileSize,
+        tile_spacing: TilemapSpacing,
+        filtering: FilterMode,
+        image_assets: &Res<Assets<Image>>,
+    ) -> ExtractedTileset {
+        let (tile_count, texture_size, format) = match &texture {
+            Tileset::Single(handle) => {
+                let image = image_assets.get(handle).expect(
+                    "Expected image to have finished loading if \
+                    it is being extracted as a texture!",
+                );
+                let texture_size: TilemapTextureSize = image.size_f32().into();
+                let tile_count_x = ((texture_size.x) / (tile_size.x + tile_spacing.x)).floor();
+                let tile_count_y = ((texture_size.y) / (tile_size.y + tile_spacing.y)).floor();
+                (
+                    (tile_count_x * tile_count_y) as u32,
+                    texture_size,
+                    image.texture_descriptor.format,
+                )
+            }
+        };
+
+        ExtractedTileset {
+            tilemap_id: TilemapId(tilemap_entity),
+            texture,
+            tile_spacing,
+            filtering,
+            tile_count,
+            texture_size,
+            format,
+        }
+    }
 }
 
 struct GpuTilemap {
@@ -146,7 +200,7 @@ impl FromWorld for TilemapPipeline {
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
-                    texture_2d(TextureSampleType::Float { filterable: false }),
+                    texture_2d_array(TextureSampleType::Float { filterable: false }),
                     sampler(SamplerBindingType::Filtering),
                 ),
             ),
@@ -164,27 +218,31 @@ impl FromWorld for TilemapPipeline {
 // Specialize the pipeline with size/runtime configurable data. I think.
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct TilemapPipelineKey {
-    // TODO: tile texture
     msaa_samples: u32,
+    has_tiles_texture: bool,
 }
 
 impl SpecializedRenderPipeline for TilemapPipeline {
     type Key = TilemapPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        let mut shader_defs: Vec<ShaderDefVal> = vec![];
+        if key.has_tiles_texture {
+            shader_defs.push("TILEMAP_HAS_TILE_TEXTURE".into());
+        }
         RenderPipelineDescriptor {
             label: Some("tilemap_pipeline".into()),
-            layout: vec![self.view_layout.clone(), self.tilemap_layout.clone()], // TODO: tile texture
+            layout: vec![self.view_layout.clone(), self.tilemap_layout.clone(), self.tiles_layout.clone()], // TODO: tile texture
             push_constant_ranges: vec![],
             vertex: VertexState {
                 shader: self.shader.clone(),
-                shader_defs: vec![], // TODO: tile texture
+                shader_defs: shader_defs.clone(),
                 entry_point: "vertex".into(),
                 buffers: vec![],
             },
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
-                shader_defs: vec![],
+                shader_defs: shader_defs,
                 entry_point: "fragment".into(),
                 targets: vec![Some(ColorTargetState {
                     // todo: make this support HDR at some point?
@@ -291,9 +349,39 @@ fn extract_tilemaps(
                     chunks: chunks.clone(),
                     tile_size: *tile_size,
                     grid_size: *grid_size,
+                    texture: None,
                 });
             }
         };
+    }
+}
+
+fn extract_tilemap_textures(
+    mut extracted_tilemaps: ResMut<ExtractedTilemaps>,
+    tilemap_query: Extract<
+        Query<(
+            Entity,
+            &TilemapTileSize,
+            &TilemapSpacing,
+            &Tileset,
+        )>,
+    >,
+    images: Extract<Res<Assets<Image>>>,
+) {
+    for (entity, size, spacing, texture) in tilemap_query.iter() {
+        let Some(tilemap) = extracted_tilemaps.map.get_mut(&entity) else {
+            return
+        };
+        if tilemap.texture.is_none() && texture.verify_ready(&images) {
+            tilemap.texture = Some(ExtractedTileset::new(
+                entity,
+                texture.clone_weak(),
+                *size,
+                *spacing,
+                FilterMode::Nearest,
+                &images,
+            ))
+        }
     }
 }
 
@@ -354,12 +442,27 @@ fn prepare_tilemaps(
                     &gpu_chunks.texture_view,
                 )),
             );
+            let tile_bind_group = extracted.texture.as_ref().map(|texture| {
+                let texture_array = create_texture_array(
+                    &device,
+                    &queue,
+                    texture,
+                );
+                device.create_bind_group(
+                    "tile_bind_group",
+                    &tilemap_pipeline.tiles_layout,
+                    &BindGroupEntries::sequential((
+                        &texture_array.view,
+                        &texture_array.sampler,
+                    )),
+                )
+            });
             prepared_tilemaps.map.insert(*e, GpuTilemap {
                 gpu_chunks,
                 tilemap_uniform,
                 view_bind_group,
                 tilemap_bind_group,
-                tile_bind_group: None, // TODO: tile texture
+                tile_bind_group,
             });
         }
     }
@@ -388,19 +491,21 @@ fn queue_tilemaps(
             continue;
         };
 
-        let pipeline = pipelines.specialize(
-            &pipeline_cache,
-            &tilemap_pipeline,
-            TilemapPipelineKey {
-                msaa_samples: msaa.samples(),
-            },
-        );
 
         transparent_phase
             .items
             .reserve(extracted_tilemaps.map.len());
 
         for (entity, extracted_tilemap) in extracted_tilemaps.map.iter() {
+            let pipeline = pipelines.specialize(
+                &pipeline_cache,
+                &tilemap_pipeline,
+                TilemapPipelineKey {
+                    msaa_samples: msaa.samples(),
+                    has_tiles_texture: extracted_tilemap.texture.is_some(),
+                },
+            );
+
             /*let index = extracted_tilemap.unwrap_or(*entity).index();
 
             if !view_entities.contains(index as usize) {
