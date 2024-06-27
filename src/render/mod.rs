@@ -34,7 +34,7 @@ use binding_types::texture_2d_array;
 use std::borrow::Cow;
 
 use crate::{map::*, tiles::*};
-use crate::render::texture_array::create_texture_array;
+use crate::render::texture_array::{create_texture_array, update_texture_array};
 
 pub struct TileMapRendererPlugin;
 impl Plugin for TileMapRendererPlugin {
@@ -86,13 +86,13 @@ struct ExtractedTilemaps {
     map: EntityHashMap<ExtractedTilemap>,
 }
 
-#[derive(Component)]
 pub(crate) struct ExtractedTileset {
     pub tilemap_id: TilemapId,
     pub texture_size: TilemapTextureSize,
+    pub tile_size: TilemapTileSize,
     pub tile_spacing: TilemapSpacing,
     pub tile_count: u32,
-    pub texture: Tileset,
+    pub texture: ExtractedTilesetTexture,
     pub filtering: FilterMode,
     pub format: TextureFormat,
 }
@@ -100,14 +100,14 @@ pub(crate) struct ExtractedTileset {
 impl ExtractedTileset {
     pub fn new(
         tilemap_entity: Entity,
-        texture: Tileset,
+        texture: TilesetTexture,
         tile_size: TilemapTileSize,
         tile_spacing: TilemapSpacing,
         filtering: FilterMode,
         image_assets: &Res<Assets<Image>>,
     ) -> ExtractedTileset {
-        let (tile_count, texture_size, format) = match &texture {
-            Tileset::Single(handle) => {
+        let (texture, tile_count, texture_size, format) = match &texture {
+            TilesetTexture::Single(handle) => {
                 let image = image_assets.get(handle).expect(
                     "Expected image to have finished loading if \
                     it is being extracted as a texture!",
@@ -116,8 +116,53 @@ impl ExtractedTileset {
                 let tile_count_x = ((texture_size.x) / (tile_size.x + tile_spacing.x)).floor();
                 let tile_count_y = ((texture_size.y) / (tile_size.y + tile_spacing.y)).floor();
                 (
+                    ExtractedTilesetTexture::Single(image.clone()),
                     (tile_count_x * tile_count_y) as u32,
                     texture_size,
+                    image.texture_descriptor.format,
+                )
+            },
+            TilesetTexture::Vector(handles) => {
+                let mut images = vec![];
+                for handle in handles {
+                    let image = image_assets.get(handle).expect(
+                        "Expected image to have finished loading if \
+                        it is being extracted as a texture!",
+                    );
+                    let this_tile_size: TilemapTileSize = image.size_f32().into();
+                    if this_tile_size != tile_size {
+                        panic!(
+                            "Expected all provided image assets to have size {tile_size:?}, \
+                                    but found image with size: {this_tile_size:?}",
+                        );
+                    }
+                }
+                let first_format = image_assets
+                    .get(handles.first().unwrap())
+                    .unwrap()
+                    .texture_descriptor
+                    .format;
+
+                for handle in handles {
+                    let image = image_assets.get(handle).unwrap();
+                    if image.texture_descriptor.format != first_format {
+                        panic!("Expected all provided image assets to have the same format of: {:?} but found image with format: {:?}", first_format, image.texture_descriptor.format);
+                    }
+                    images.push(image.clone())
+                }
+
+                (ExtractedTilesetTexture::Vector(images), handles.len() as u32, tile_size.into(), first_format)
+            }
+            TilesetTexture::TextureContainer(image_handle) => {
+                let image = image_assets.get(image_handle).expect(
+                    "Expected image to have finished loading if \
+                        it is being extracted as a texture!",
+                );
+                let tile_size: TilemapTileSize = image.size_f32().into();
+                (
+                    ExtractedTilesetTexture::TextureContainer(image.clone()),
+                    image.texture_descriptor.array_layer_count(),
+                    tile_size.into(),
                     image.texture_descriptor.format,
                 )
             }
@@ -130,9 +175,26 @@ impl ExtractedTileset {
             filtering,
             tile_count,
             texture_size,
+            tile_size,
             format,
         }
     }
+}
+
+/// The raw data for the Texture
+#[derive(Clone, Debug)]
+pub enum ExtractedTilesetTexture {
+    /// All textures for tiles are inside a single image asset directly next to each other
+    Single(Image),
+    /// Each tile's texture has its own image asset (each asset must have the same size), so there
+    /// is a vector of image assets.
+    ///
+    /// Each image should have the same size, identical to the provided `TilemapTileSize`. If this
+    /// is not the case, a panic will be thrown during the verification when images are being
+    /// extracted to the render world.
+    Vector(Vec<Image>),
+    /// The tiles are provided as array layers inside a KTX2 or DDS container.
+    TextureContainer(Image),
 }
 
 struct GpuTilemap {
@@ -140,7 +202,7 @@ struct GpuTilemap {
     tilemap_uniform: UniformBuffer<TilemapInfo>,
     view_bind_group: BindGroup,
     tilemap_bind_group: BindGroup,
-    tile_bind_group: Option<BindGroup>,
+    tileset_bind_group: Option<BindGroup>,
 }
 
 #[derive(Resource, Default)]
@@ -200,7 +262,7 @@ impl FromWorld for TilemapPipeline {
             &BindGroupLayoutEntries::sequential(
                 ShaderStages::FRAGMENT,
                 (
-                    texture_2d_array(TextureSampleType::Float { filterable: false }),
+                    texture_2d_array(TextureSampleType::Float { filterable: true }),
                     sampler(SamplerBindingType::Filtering),
                 ),
             ),
@@ -227,12 +289,16 @@ impl SpecializedRenderPipeline for TilemapPipeline {
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         let mut shader_defs: Vec<ShaderDefVal> = vec![];
+        let mut layout: Vec<BindGroupLayout> = vec![self.view_layout.clone(), self.tilemap_layout.clone()];
+
         if key.has_tiles_texture {
             shader_defs.push("TILEMAP_HAS_TILE_TEXTURE".into());
+            layout.push(self.tiles_layout.clone())
         }
+
         RenderPipelineDescriptor {
             label: Some("tilemap_pipeline".into()),
-            layout: vec![self.view_layout.clone(), self.tilemap_layout.clone(), self.tiles_layout.clone()], // TODO: tile texture
+            layout,
             push_constant_ranges: vec![],
             vertex: VertexState {
                 shader: self.shader.clone(),
@@ -363,7 +429,7 @@ fn extract_tilemap_textures(
             Entity,
             &TilemapTileSize,
             &TilemapSpacing,
-            &Tileset,
+            &TilesetTexture,
         )>,
     >,
     images: Extract<Res<Assets<Image>>>,
@@ -442,27 +508,32 @@ fn prepare_tilemaps(
                     &gpu_chunks.texture_view,
                 )),
             );
-            let tile_bind_group = extracted.texture.as_ref().map(|texture| {
+            let tileset_bind_group = extracted.texture.as_ref().map(|texture| {
                 let texture_array = create_texture_array(
                     &device,
                     &queue,
                     texture,
                 );
-                device.create_bind_group(
+                println!("preparing tileset!");
+                let bg = device.create_bind_group(
                     "tile_bind_group",
                     &tilemap_pipeline.tiles_layout,
                     &BindGroupEntries::sequential((
                         &texture_array.view,
                         &texture_array.sampler,
                     )),
-                )
+                );
+                update_texture_array(&device, &queue, &texture_array, &texture);
+                bg
             });
+
+
             prepared_tilemaps.map.insert(*e, GpuTilemap {
                 gpu_chunks,
                 tilemap_uniform,
                 view_bind_group,
                 tilemap_bind_group,
-                tile_bind_group,
+                tileset_bind_group,
             });
         }
     }
@@ -622,7 +693,7 @@ type DrawTilemap = (
     SetItemPipeline,
     SetTilemapViewBindGroup<0>,
     SetTilemapBindGroup<1>,
-    //SetTilesTextureBindGroup<2>,
+    SetTilesetBindGroup<2>,
     DrawTileMap,
 );
 
@@ -669,36 +740,31 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilemapBindGroup<I> {
         RenderCommandResult::Success
     }
 }
-/*
-pub struct SetTilesTextureBindGroup<const I: usize>;
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilesTextureBindGroup<I> {
-    type Param = SRes<ImageBindGroups>;
+
+pub struct SetTilesetBindGroup<const I: usize>;
+
+impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilesetBindGroup<I> {
+    type Param = SRes<PreparedTilemaps>;
     type ViewQuery = ();
-    type ItemQuery = Read<TilemapChunk>;
+    type ItemQuery = ();
 
     fn render<'w>(
-        _item: &P,
+        item: &P,
         _view: (),
-        batch: Option<&'_ TilemapChunk>,
-        image_bind_groups: SystemParamItem<'w, '_, Self::Param>,
+        _entity: Option<()>,
+        tilemaps: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let image_bind_groups = image_bind_groups.into_inner();
-        let Some(batch) = batch else {
+        let tilemaps = tilemaps.into_inner();
+        let Some(tilemap) = tilemaps.map.get(&item.entity()) else {
             return RenderCommandResult::Failure;
         };
-
-        pass.set_bind_group(
-            I,
-            image_bind_groups
-                .values
-                .get(&batch.image_handle_id)
-                .unwrap(),
-            &[],
-        );
+        if let Some(tileset) = &tilemap.tileset_bind_group {
+            pass.set_bind_group(I, &tileset, &[]);
+        }
         RenderCommandResult::Success
     }
-}*/
+}
 
 struct DrawTileMap {}
 impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {

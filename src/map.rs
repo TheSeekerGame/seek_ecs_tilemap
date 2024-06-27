@@ -14,7 +14,7 @@ pub struct TilemapBundle {
     pub size: TilemapSize,
     pub spacing: TilemapSpacing,
     pub storage: TileStorage,
-    pub texture: Tileset,
+    pub texture: TilesetTexture,
     pub tile_size: TilemapTileSize,
     pub chunks: TilemapChunks,
     pub transform: Transform,
@@ -84,40 +84,81 @@ impl From<UVec2> for TilemapSize {
     }
 }
 
-#[derive(Component, Reflect, Clone, Debug, Hash, PartialEq, Eq, Default)]
-pub struct Tileset(Handle<Image>);
+#[derive(Component, Reflect, Clone, Debug, Hash, PartialEq, Eq, )]
+pub enum TilesetTexture {
+    /// All textures for tiles are inside a single image asset directly next to each other
+    Single(Handle<Image>),
+    /// Each tile's texture has its own image asset (each asset must have the same size), so there
+    /// is a vector of image assets.
+    ///
+    /// Each image should have the same size, identical to the provided `TilemapTileSize`. If this
+    /// is not the case, a panic will be thrown during the verification when images are being
+    /// extracted to the render world.
+    Vector(Vec<Handle<Image>>),
+    /// The tiles are provided as array layers inside a KTX2 or DDS container.
+    TextureContainer(Handle<Image>),
+}
 
-impl Tileset {
-    pub fn handle(&self) -> &Handle<Image> {
-        &self.0
+impl Default for TilesetTexture {
+    fn default() -> Self {
+        TilesetTexture::Single(Default::default())
+    }
+}
+
+impl TilesetTexture {
+    pub fn image_handles(&self) -> Vec<&Handle<Image>> {
+        match &self {
+            TilesetTexture::Single(handle) => vec![handle],
+            TilesetTexture::Vector(handles) => handles.iter().collect(),
+            TilesetTexture::TextureContainer(handle) => vec![handle],
+        }
     }
 
     pub fn verify_ready(&self, images: &Res<Assets<Image>>) -> bool {
-        images.get(self.handle()).is_some()
+        self.image_handles().into_iter().all(|h| {
+            if let Some(image) = images.get(h) {
+                image
+                    .texture_descriptor
+                    .usage
+                    .contains(TextureUsages::COPY_SRC)
+            } else {
+                false
+            }
+        })
     }
+
 
     /// Sets images with the `COPY_SRC` flag.
     pub fn set_images_to_copy_src(&self, images: &mut ResMut<Assets<Image>>) {
-
-        // NOTE: We retrieve it non-mutably first to avoid triggering an `AssetEvent::Modified`
-        // if we didn't actually need to modify it
-        if let Some(image) = images.get(self.handle()) {
-            if !image
-                .texture_descriptor
-                .usage
-                .contains(TextureUsages::COPY_SRC)
-            {
-                if let Some(image) = images.get_mut(self.handle()) {
-                    image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
-                        | TextureUsages::COPY_SRC
-                        | TextureUsages::COPY_DST;
-                };
+        for handle in self.image_handles() {
+            // NOTE: We retrieve it non-mutably first to avoid triggering an `AssetEvent::Modified`
+            // if we didn't actually need to modify it
+            if let Some(image) = images.get(handle) {
+                if !image
+                    .texture_descriptor
+                    .usage
+                    .contains(TextureUsages::COPY_SRC)
+                {
+                    if let Some(image) = images.get_mut(handle) {
+                        image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
+                            | TextureUsages::COPY_SRC
+                            | TextureUsages::COPY_DST;
+                    };
+                }
             }
         }
     }
 
     pub fn clone_weak(&self) -> Self {
-        Tileset(self.0.clone_weak())
+        match self {
+            TilesetTexture::Single(handle) => TilesetTexture::Single(handle.clone_weak()),
+            TilesetTexture::Vector(handles) => {
+                TilesetTexture::Vector(handles.iter().map(|h| h.clone_weak()).collect())
+            }
+            TilesetTexture::TextureContainer(handle) => {
+                TilesetTexture::TextureContainer(handle.clone_weak())
+            }
+        }
     }
 }
 

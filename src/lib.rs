@@ -8,6 +8,7 @@ pub(crate) mod render;
 pub mod tiles;
 
 pub use crate::map::TilemapBundle;
+use crate::map::TilesetTexture;
 
 pub struct TilemapPlugin;
 
@@ -15,9 +16,12 @@ impl Plugin for TilemapPlugin {
     fn build(&self, app: &mut App) {
         use crate::map::*;
         use crate::tiles::*;
+
+        app.add_systems(Update, set_texture_to_copy_src);
+
         app.register_type::<TilemapId>()
             .register_type::<TilemapSize>()
-            .register_type::<Tileset>()
+            .register_type::<TilesetTexture>()
             .register_type::<TilemapTileSize>()
             .register_type::<TilemapGridSize>()
             .register_type::<TilemapSpacing>()
@@ -37,5 +41,15 @@ impl Plugin for TilemapPlugin {
             //crate::chunk::plugin,
             crate::render::TileMapRendererPlugin,
         ));
+    }
+}
+
+pub fn set_texture_to_copy_src(
+    mut images: ResMut<Assets<Image>>,
+    texture_query: Query<&TilesetTexture>,
+) {
+    // quick and dirty, run this for all textures anytime a texture component is created.
+    for texture in texture_query.iter() {
+        texture.set_images_to_copy_src(&mut images)
     }
 }
