@@ -34,6 +34,7 @@ use binding_types::texture_2d_array;
 use std::borrow::Cow;
 use std::thread::sleep;
 use std::time::Duration;
+use bevy::asset::load_internal_asset;
 
 use crate::{map::*, tiles::*};
 use crate::render::texture_array::{create_texture_array, update_texture_array};
@@ -42,6 +43,12 @@ pub struct TileMapRendererPlugin;
 impl Plugin for TileMapRendererPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostUpdate, update_tilemap_chunks);
+        load_internal_asset!(
+            app,
+            TILE_MAP_SHADER_HANDLE,
+            "tile_map_render.wgsl",
+            Shader::from_wgsl
+        );
 
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
             warn!("Failed to get render app for tilemap_renderer");
@@ -67,6 +74,8 @@ impl Plugin for TileMapRendererPlugin {
         }
     }
 }
+
+pub const TILE_MAP_SHADER_HANDLE: Handle<Shader> = Handle::weak_from_u128(11575316803102594335);
 
 /// GPU representation of TilemapChunks
 struct GpuTilemapChunks {
@@ -214,7 +223,6 @@ pub struct PreparedTilemaps {
     map: EntityHashMap<GpuTilemap>,
 }
 
-const SHADER_ASSET_PATH: &str = "tile_map_render.wgsl";
 
 #[derive(ShaderType, Clone)]
 struct TilemapInfo {
@@ -230,13 +238,13 @@ struct TilemapPipeline {
     view_layout: BindGroupLayout,
     tilemap_layout: BindGroupLayout,
     tiles_layout: BindGroupLayout,
-    shader: Handle<Shader>,
 }
+
+const SHADER_ASSET_PATH: &str = "tile_map_render.wgsl";
 
 // Initialize the pipelines data
 impl FromWorld for TilemapPipeline {
     fn from_world(world: &mut World) -> Self {
-        let shader = world.load_asset(SHADER_ASSET_PATH);
         let mut system_state: SystemState<(
             Res<RenderDevice>,
             Res<DefaultImageSampler>,
@@ -276,7 +284,6 @@ impl FromWorld for TilemapPipeline {
             view_layout,
             tilemap_layout,
             tiles_layout,
-            shader,
         }
     }
 }
@@ -305,13 +312,13 @@ impl SpecializedRenderPipeline for TilemapPipeline {
             layout,
             push_constant_ranges: vec![],
             vertex: VertexState {
-                shader: self.shader.clone(),
+                shader: TILE_MAP_SHADER_HANDLE,
                 shader_defs: shader_defs.clone(),
                 entry_point: "vertex".into(),
                 buffers: vec![],
             },
             fragment: Some(FragmentState {
-                shader: self.shader.clone(),
+                shader: TILE_MAP_SHADER_HANDLE,
                 shader_defs: shader_defs,
                 entry_point: "fragment".into(),
                 targets: vec![Some(ColorTargetState {
