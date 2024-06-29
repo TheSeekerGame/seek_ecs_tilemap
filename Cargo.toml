@@ -23,11 +23,11 @@ serde = { version = "1", features = ["derive"], optional = true }
 rand = "0.8"
 
 [dependencies.bevy]
-version = "0.14.0-rc.3"
+version = "0.14.0-rc.4"
 default-features = false
 
 [dev-dependencies.bevy]
-version = "0.14.0-rc.3"
+version = "0.14.0-rc.4"
 default-features = true
 features = [
     "x11",
