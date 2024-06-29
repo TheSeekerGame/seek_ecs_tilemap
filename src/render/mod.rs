@@ -32,6 +32,8 @@ use bevy::render::{Extract, Render, RenderApp, RenderSet};
 use bevy::utils::hashbrown::hash_map::Entry;
 use binding_types::texture_2d_array;
 use std::borrow::Cow;
+use std::thread::sleep;
+use std::time::Duration;
 
 use crate::{map::*, tiles::*};
 use crate::render::texture_array::{create_texture_array, update_texture_array};
@@ -54,7 +56,7 @@ impl Plugin for TileMapRendererPlugin {
             .add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
             .add_systems(Render, (
-                prepare_tilemaps.in_set(RenderSet::Prepare),
+                prepare_tilemaps.in_set(RenderSet::Queue).before(queue_tilemaps),
                 queue_tilemaps.in_set(RenderSet::Queue),
             ));
     }
@@ -95,6 +97,7 @@ pub(crate) struct ExtractedTileset {
     pub texture: ExtractedTilesetTexture,
     pub filtering: FilterMode,
     pub format: TextureFormat,
+    pub bg_uploaded: bool,
 }
 
 impl ExtractedTileset {
@@ -177,6 +180,7 @@ impl ExtractedTileset {
             texture_size,
             tile_size,
             format,
+            bg_uploaded: false,
         }
     }
 }
@@ -291,7 +295,7 @@ impl SpecializedRenderPipeline for TilemapPipeline {
         let mut shader_defs: Vec<ShaderDefVal> = vec![];
         let mut layout: Vec<BindGroupLayout> = vec![self.view_layout.clone(), self.tilemap_layout.clone()];
 
-        if key.has_tiles_texture {
+        if true {//key.has_tiles_texture {
             shader_defs.push("TILEMAP_HAS_TILE_TEXTURE".into());
             layout.push(self.tiles_layout.clone())
         }
@@ -460,6 +464,9 @@ fn prepare_tilemaps(
     view_uniforms: Res<ViewUniforms>,
 ) {
     for (e, extracted) in extracted_tilemaps.map.iter_mut() {
+        if let Some(tileset) = &mut extracted.texture {
+            tileset.bg_uploaded = true;
+        }
         if let Some(prepared) = prepared_tilemaps.map.get_mut(e) {
             // Texture already exists in GPU memory.
             // Update it with any dirty data!
@@ -508,7 +515,8 @@ fn prepare_tilemaps(
                     &gpu_chunks.texture_view,
                 )),
             );
-            let tileset_bind_group = extracted.texture.as_ref().map(|texture| {
+            let tileset_bind_group =
+                extracted.texture.as_ref().map(|texture| {
                 let texture_array = create_texture_array(
                     &device,
                     &queue,
@@ -556,6 +564,7 @@ fn queue_tilemaps(
     )>,
 ) {
     let draw_tilemap_function = draw_functions.read().id::<DrawTilemap>();
+    let draw_bland_tilemap_function = draw_functions.read().id::<DrawTilemap>();
 
     for (view_entity, visible_entities, view, tonemapping, dither) in &mut views {
         let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
@@ -568,6 +577,11 @@ fn queue_tilemaps(
             .reserve(extracted_tilemaps.map.len());
 
         for (entity, extracted_tilemap) in extracted_tilemaps.map.iter() {
+            let draw_function = if extracted_tilemap.texture.is_some() {
+                draw_tilemap_function
+            } else {
+                draw_bland_tilemap_function
+            };
             let pipeline = pipelines.specialize(
                 &pipeline_cache,
                 &tilemap_pipeline,
@@ -588,7 +602,7 @@ fn queue_tilemaps(
 
             // Add the item to the render phase
             transparent_phase.add(Transparent2d {
-                draw_function: draw_tilemap_function,
+                draw_function: draw_function,
                 pipeline,
                 entity: *entity,
                 sort_key,
