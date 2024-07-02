@@ -9,16 +9,13 @@ use bevy::ecs::entity::EntityHashMap;
 use bevy::ecs::query::{QueryItem, ROQueryItem};
 use bevy::ecs::system::lifetimeless::{Read, SRes};
 use bevy::ecs::system::{SystemParamItem, SystemState};
-use bevy::math::{Affine3, FloatOrd};
+use bevy::math::{Affine3};
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
-use bevy::render::mesh::{GpuBufferInfo, GpuMesh, MeshVertexBufferLayoutRef, PrimitiveTopology};
+use bevy::render::mesh::{GpuBufferInfo, GpuMesh, PrimitiveTopology};
 use bevy::render::render_asset::RenderAssets;
 use bevy::render::render_graph::{Node, NodeRunError, RenderGraphContext, SlotInfo};
-use bevy::render::render_phase::{
-    AddRenderCommand, DrawFunctions, PhaseItem, PhaseItemExtraIndex, RenderCommand,
-    RenderCommandResult, SetItemPipeline, TrackedRenderPass, ViewSortedRenderPhases,
-};
+use bevy::render::render_phase::{AddRenderCommand, DrawFunctions, PhaseItem, RenderCommand, RenderCommandResult, RenderPhase, SetItemPipeline, TrackedRenderPass};
 use bevy::render::render_resource::binding_types::{sampler, texture_2d, uniform_buffer};
 use bevy::render::render_resource::*;
 use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
@@ -35,6 +32,7 @@ use std::borrow::Cow;
 use std::thread::sleep;
 use std::time::Duration;
 use bevy::asset::load_internal_asset;
+use bevy::utils::FloatOrd;
 
 use crate::{map::*, tiles::*};
 use crate::render::texture_array::{create_texture_array, update_texture_array};
@@ -50,7 +48,7 @@ impl Plugin for TileMapRendererPlugin {
             Shader::from_wgsl
         );
 
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
+        let Ok(render_app) = app.get_sub_app_mut(RenderApp) else {
             warn!("Failed to get render app for tilemap_renderer");
             return;
         };
@@ -69,7 +67,7 @@ impl Plugin for TileMapRendererPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+        if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app.init_resource::<TilemapPipeline>();
         }
     }
@@ -474,6 +472,7 @@ fn prepare_tilemaps(
         if let Some(tileset) = &mut extracted.texture {
             tileset.bg_uploaded = true;
         }
+        let mut update = false;
         if let Some(prepared) = prepared_tilemaps.map.get_mut(e) {
             // Texture already exists in GPU memory.
             // Update it with any dirty data!
@@ -489,7 +488,14 @@ fn prepare_tilemaps(
             });
             prepared.tilemap_uniform.write_buffer(&device, &queue);
             // Bind Groups already exist and don't need changing.
-        } else {
+
+            if prepared.tileset_bind_group.is_none() && extracted.texture.is_some() {
+                update = true;
+                println!("late update!")
+            }
+        }
+
+        if prepared_tilemaps.map.get_mut(e).is_none() || update {
             let Some(view_binding) = view_uniforms.uniforms.binding() else {
                 continue;
             };
@@ -561,23 +567,19 @@ fn queue_tilemaps(
     mut pipelines: ResMut<SpecializedRenderPipelines<TilemapPipeline>>,
     pipeline_cache: Res<PipelineCache>,
     msaa: Res<Msaa>,
-    mut transparent_render_phases: ResMut<ViewSortedRenderPhases<Transparent2d>>,
     mut views: Query<(
         Entity,
         &VisibleEntities,
         &ExtractedView,
         Option<&Tonemapping>,
         Option<&DebandDither>,
+        &mut RenderPhase<Transparent2d>,
     )>,
 ) {
     let draw_tilemap_function = draw_functions.read().id::<DrawTilemap>();
     let draw_bland_tilemap_function = draw_functions.read().id::<DrawTilemap>();
 
-    for (view_entity, visible_entities, view, tonemapping, dither) in &mut views {
-        let Some(transparent_phase) = transparent_render_phases.get_mut(&view_entity) else {
-            continue;
-        };
-
+    for (view_entity, visible_entities, view, tonemapping, dither, mut transparent_phase) in &mut views {
 
         transparent_phase
             .items
@@ -615,7 +617,7 @@ fn queue_tilemaps(
                 sort_key,
                 // I think this needs to be at least 1
                 batch_range: 0..1,
-                extra_index: PhaseItemExtraIndex::NONE,
+                dynamic_offset: None,
             });
         }
     }
@@ -782,6 +784,8 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilesetBindGroup<I> {
         };
         if let Some(tileset) = &tilemap.tileset_bind_group {
             pass.set_bind_group(I, &tileset, &[]);
+        } else {
+            return RenderCommandResult::Failure
         }
         RenderCommandResult::Success
     }
@@ -804,8 +808,9 @@ impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
         let Some(tilemap) = tilemaps.map.get(&item.entity()) else {
             return RenderCommandResult::Failure;
         };
-        let n_verts = tilemap.chunks.chunk_size.element_product() * 6;
-        let n_insts = tilemap.chunks.n_chunks.element_product();
+        let size = tilemap.chunks.chunk_size;
+        let n_verts = size.x * size.y * 6;
+        let n_insts = size.x * size.y;
         pass.draw(0..n_verts, 0..n_insts);
         RenderCommandResult::Success
     }

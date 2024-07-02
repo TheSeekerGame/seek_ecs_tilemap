@@ -389,7 +389,7 @@ impl TilemapChunks {
         let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 16)];
         // GPUs are little endian
         let index_bytes = index.0.to_le_bytes();
-        let color_bytes = LinearRgba::from(color.0).as_u32().to_le_bytes();
+        let color_bytes = color.0.as_rgba_u32().to_le_bytes();
         tile_bytes[0..4].copy_from_slice(&index_bytes);
         tile_bytes[4..8].copy_from_slice(&color_bytes);
         tile_bytes[8] = ((visible.0 as u8) << 0)

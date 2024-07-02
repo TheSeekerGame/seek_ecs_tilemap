@@ -1,5 +1,4 @@
 #import bevy_render::{
-    maths::affine3_to_square,
     view::View,
 }
 
@@ -134,7 +133,7 @@ fn vertex(input: VertexInput) -> VertexOutput {
     );
     let vertex_world =
         affine3_to_square(tilemap_info.transform_affine) * vertex_model;
-    let vertex_clip = view.clip_from_world * vertex_world;
+    let vertex_clip = view.view_proj * vertex_world;
 
     output.position = vertex_clip;
 
@@ -159,4 +158,13 @@ fn fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 #else
     return tile_color;
 #endif
+}
+
+fn affine3_to_square(affine: mat3x4<f32>) -> mat4x4<f32> {
+    return transpose(mat4x4<f32>(
+        affine[0],
+        affine[1],
+        affine[2],
+        vec4<f32>(0.0, 0.0, 0.0, 1.0),
+    ));
 }

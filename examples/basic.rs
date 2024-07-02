@@ -41,9 +41,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
          ..default()
      });*/
 
-    for i in 1..9u32 {
+    for i in 1..3u32 {
         let width = 50 * i;
-        let height = random::<u8>() as u32 * i;
+        let height = 50 * i;//random::<u8>() as u32 * i;
         let e_tilemap = commands
             .spawn(TilemapBundle {
                 grid_size: TilemapGridSize::new(17.0, 17.0),
@@ -74,7 +74,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     visible: TileVisible::default(),
                     flip: TileFlip { x: false, y: false, d: false },
                     //color: TileColor(Srgba::rgb_u8(((x *25) % 256) as u8, ((y * 25) % 256) as u8, 0).into()),
-                    color: TileColor(Srgba::WHITE.into()),
+                    color: TileColor(Color::WHITE.into()),
                     old_position: default(),
                 });
             }
@@ -92,13 +92,13 @@ pub fn updates(mut q_tile: Query<
         &mut TileVisible,
     )>, mut idx: Local<usize>,
 ) {
-    for i in 0..10 {
+    /*for i in 0..10 {
         let Some((id, pos, mut color, flip, mut visible)) = q_tile.iter_mut().skip(*idx).next() else {
             *idx = 0;
             return
         };
 
-        *color = TileColor(Srgba::new(
+        *color = TileColor(Color::rgba(
             random::<f32>(),
             random::<f32>(),
             random::<f32>(),
@@ -108,7 +108,7 @@ pub fn updates(mut q_tile: Query<
         visible.0 = random::<bool>();
 
         *idx += 1
-    }
+    }*/
 }
 
 pub fn updates_entire_map_pos(
