@@ -41,7 +41,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
          ..default()
      });*/
 
-    for i in 1..3u32 {
+    for i in 1..9u32 {
         let width = 50 * i;
         let height = 50 * i;//random::<u8>() as u32 * i;
         let e_tilemap = commands

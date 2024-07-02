@@ -61,7 +61,7 @@ impl Plugin for TileMapRendererPlugin {
             .add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
             .add_systems(Render, (
-                prepare_tilemaps.in_set(RenderSet::Queue).before(queue_tilemaps),
+                prepare_tilemaps.in_set(RenderSet::Prepare),
                 queue_tilemaps.in_set(RenderSet::Queue),
             ));
     }
@@ -472,7 +472,7 @@ fn prepare_tilemaps(
         if let Some(tileset) = &mut extracted.texture {
             tileset.bg_uploaded = true;
         }
-        let mut update = false;
+
         if let Some(prepared) = prepared_tilemaps.map.get_mut(e) {
             // Texture already exists in GPU memory.
             // Update it with any dirty data!
@@ -490,12 +490,28 @@ fn prepare_tilemaps(
             // Bind Groups already exist and don't need changing.
 
             if prepared.tileset_bind_group.is_none() && extracted.texture.is_some() {
-                update = true;
-                println!("late update!")
+                let tileset_bind_group =
+                    extracted.texture.as_ref().map(|texture| {
+                        let texture_array = create_texture_array(
+                            &device,
+                            &queue,
+                            texture,
+                        );
+                        println!("preparing tileset!");
+                        let bg = device.create_bind_group(
+                            "tile_bind_group",
+                            &tilemap_pipeline.tiles_layout,
+                            &BindGroupEntries::sequential((
+                                &texture_array.view,
+                                &texture_array.sampler,
+                            )),
+                        );
+                        update_texture_array(&device, &queue, &texture_array, &texture);
+                        bg
+                    });
+                prepared.tileset_bind_group = tileset_bind_group;
             }
-        }
-
-        if prepared_tilemaps.map.get_mut(e).is_none() || update {
+        } else {
             let Some(view_binding) = view_uniforms.uniforms.binding() else {
                 continue;
             };
@@ -528,6 +544,7 @@ fn prepare_tilemaps(
                     &gpu_chunks.texture_view,
                 )),
             );
+
             let tileset_bind_group =
                 extracted.texture.as_ref().map(|texture| {
                 let texture_array = create_texture_array(
@@ -547,7 +564,6 @@ fn prepare_tilemaps(
                 update_texture_array(&device, &queue, &texture_array, &texture);
                 bg
             });
-
 
             prepared_tilemaps.map.insert(*e, GpuTilemap {
                 gpu_chunks,
@@ -808,9 +824,11 @@ impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
         let Some(tilemap) = tilemaps.map.get(&item.entity()) else {
             return RenderCommandResult::Failure;
         };
-        let size = tilemap.chunks.chunk_size;
-        let n_verts = size.x * size.y * 6;
-        let n_insts = size.x * size.y;
+        let chunk_size = tilemap.chunks.chunk_size;
+        let chunks = tilemap.chunks.n_chunks;
+
+        let n_verts = chunk_size.x * chunk_size.y * 6;
+        let n_insts = chunks.x * chunks.y;
         pass.draw(0..n_verts, 0..n_insts);
         RenderCommandResult::Success
     }
