@@ -30,6 +30,10 @@ fn main() {
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle {
+        camera: Camera {
+            hdr: true,
+            ..default()
+        },
         transform: Transform::from_xyz(420.0, 240.0, 0.0),
         ..Default::default()
     });

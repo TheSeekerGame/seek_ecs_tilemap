@@ -22,9 +22,7 @@ use bevy::render::renderer::{RenderContext, RenderDevice, RenderQueue};
 use bevy::render::texture::{
     BevyDefault, DefaultImageSampler, GpuImage, ImageSampler, TextureFormatPixelInfo,
 };
-use bevy::render::view::{
-    ExtractedView, NoFrustumCulling, ViewUniform, ViewUniformOffset, ViewUniforms, VisibleEntities
-};
+use bevy::render::view::{ExtractedView, NoFrustumCulling, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms, VisibleEntities};
 use bevy::render::{Extract, Render, RenderApp, RenderSet};
 use bevy::utils::hashbrown::hash_map::Entry;
 use binding_types::texture_2d_array;
@@ -289,8 +287,9 @@ impl FromWorld for TilemapPipeline {
 // Specialize the pipeline with size/runtime configurable data. I think.
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct TilemapPipelineKey {
-    msaa_samples: u32,
+    msaa_samples: u8,
     has_tiles_texture: bool,
+    hdr: bool,
 }
 
 impl SpecializedRenderPipeline for TilemapPipeline {
@@ -300,10 +299,15 @@ impl SpecializedRenderPipeline for TilemapPipeline {
         let mut shader_defs: Vec<ShaderDefVal> = vec![];
         let mut layout: Vec<BindGroupLayout> = vec![self.view_layout.clone(), self.tilemap_layout.clone()];
 
-        if true {//key.has_tiles_texture {
+        if key.has_tiles_texture {
             shader_defs.push("TILEMAP_HAS_TILE_TEXTURE".into());
             layout.push(self.tiles_layout.clone())
         }
+
+        let format = match key.hdr {
+            true => ViewTarget::TEXTURE_FORMAT_HDR,
+            false => TextureFormat::bevy_default(),
+        };
 
         RenderPipelineDescriptor {
             label: Some("tilemap_pipeline".into()),
@@ -321,7 +325,7 @@ impl SpecializedRenderPipeline for TilemapPipeline {
                 entry_point: "fragment".into(),
                 targets: vec![Some(ColorTargetState {
                     // todo: make this support HDR at some point?
-                    format: TextureFormat::bevy_default(),
+                    format: format,
                     blend: Some(BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::ALL,
                 })],
@@ -337,7 +341,7 @@ impl SpecializedRenderPipeline for TilemapPipeline {
             },
             depth_stencil: None,
             multisample: MultisampleState {
-                count: key.msaa_samples,
+                count: key.msaa_samples as u32,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -611,8 +615,9 @@ fn queue_tilemaps(
                 &pipeline_cache,
                 &tilemap_pipeline,
                 TilemapPipelineKey {
-                    msaa_samples: msaa.samples(),
+                    msaa_samples: msaa.samples() as u8,
                     has_tiles_texture: extracted_tilemap.texture.is_some(),
+                    hdr: view.hdr,
                 },
             );
 
