@@ -41,9 +41,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
          ..default()
      });*/
 
-    for i in 1..9u32 {
-        let width = 50 * i;
-        let height = 50 * i;//random::<u8>() as u32 * i;
+    for i in 1..2u32 {
+        let width = 25 * i;
+        let height = 25 * i;//random::<u8>() as u32 * i;
         let e_tilemap = commands
             .spawn(TilemapBundle {
                 grid_size: TilemapGridSize::new(17.0, 17.0),
@@ -55,7 +55,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 tile_size: TilemapTileSize::new(16.0, 16.0),
                 chunks: TilemapChunks::default(),
                 //transform: Transform::from_scale(Vec3::splat(0.25)),
-                transform: Transform::from_scale(Vec3::splat(0.5 / (i as f32))),
+                transform: Transform::from_scale(Vec3::splat(2.5 / (i as f32))),
                 global_transform: Default::default(),
                 visibility: Default::default(),
                 inherited_visibility: Default::default(),

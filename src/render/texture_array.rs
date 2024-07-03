@@ -73,29 +73,13 @@ pub fn update_texture_array(
             let tiles_x = image_width / tile_width;
             let tiles_y = image_height / tile_height;
             let bytes_per_pixel = image_data.texture_descriptor.format.pixel_size() as u32;
-            let bytes_per_row = image_width * bytes_per_pixel;
-            let tile_size_bytes = (tile_width * tile_height * bytes_per_pixel) as usize;
-
-
-            println!("Image size: {}x{}", image_width, image_height);
-            println!("Tile size: {}x{}", tile_width, tile_height);
-            println!("Tiles: {}x{}", tiles_x, tiles_y);
-            println!("Bytes per pixel: {}", bytes_per_pixel);
-            println!("Bytes per row: {}", bytes_per_row);
-            println!("Image data length: {}", image_data.data.len());
-            println!("Tile size in bytes: {}", tile_size_bytes);
-            println!("Extracted tile count: {}", extracted_texture.tile_count);
-
             let total_tiles = tiles_x * tiles_y;
+
             if extracted_texture.tile_count as u32 != total_tiles {
                 println!("Warning: Extracted tile count ({}) doesn't match the calculated tile count ({})",
                          extracted_texture.tile_count, total_tiles);
             }
 
-            // Todo: not sure about this; I guess not to much overhead? since it only runs
-            //  on texture upload, within the render world, and only allocates as much
-            //  as one tile's worth of memory.
-            //  Still; might be better to do all this work during game load/in an asset pre-processor
             let mut tile_data = vec![0u8; (tile_width * tile_height * bytes_per_pixel) as usize];
 
             for tile_index in 0..std::cmp::min(extracted_texture.tile_count, total_tiles as u32) {
@@ -106,7 +90,8 @@ pub fn update_texture_array(
                 for y in 0..tile_height {
                     let src_start = ((tile_y + y) * image_width + tile_x) * bytes_per_pixel;
                     let src_end = src_start + (tile_width * bytes_per_pixel);
-                    let dst_start = (y * tile_width * bytes_per_pixel) as usize;
+                    
+                    let dst_start = ((tile_height - 1 - y) * tile_width * bytes_per_pixel) as usize;
                     let dst_end = dst_start + (tile_width * bytes_per_pixel) as usize;
 
                     if src_end as usize > image_data.data.len() {
