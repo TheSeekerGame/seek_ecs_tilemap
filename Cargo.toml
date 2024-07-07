@@ -1,7 +1,7 @@
 [package]
 name = "seek_ecs_tilemap"
 description = "Tilemap renderer experiment for Bevy with the goal of reducing CPU overhead. Mostly API-compatible with `bevy_ecs_tilemap`."
-version = "0.1.3"
+version = "0.1.5"
 authors = ["Ida Iyes"]
 homepage = "https://github.com/TheSeekerGame/seek_ecs_tilemap"
 repository = "https://github.com/TheSeekerGame/seek_ecs_tilemap"

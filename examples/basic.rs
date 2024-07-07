@@ -45,12 +45,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
          ..default()
      });*/
 
-    for i in 1..2u32 {
+    for i in 1..5u32 {
         let width = 25 * i;
         let height = 25 * i;//random::<u8>() as u32 * i;
         let e_tilemap = commands
             .spawn(TilemapBundle {
-                grid_size: TilemapGridSize::new(17.0, 17.0),
+                grid_size: TilemapGridSize::new(16.0, 16.0),
                 map_type: TilemapType::Square,
                 size: TilemapSize::new(width, height),
                 spacing: Default::default(),
@@ -59,7 +59,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 tile_size: TilemapTileSize::new(16.0, 16.0),
                 chunks: TilemapChunks::default(),
                 //transform: Transform::from_scale(Vec3::splat(0.25)),
-                transform: Transform::from_scale(Vec3::splat(2.5 / (i as f32))),
+                transform: Transform::from_scale(Vec3::splat(1.0 / (i as f32))).with_translation(Vec3::new(0.0, 0.0, i as f32)),
                 global_transform: Default::default(),
                 visibility: Default::default(),
                 inherited_visibility: Default::default(),
@@ -96,7 +96,7 @@ pub fn updates(mut q_tile: Query<
         &mut TileVisible,
     )>, mut idx: Local<usize>,
 ) {
-    /*for i in 0..10 {
+    for i in 0..10 {
         let Some((id, pos, mut color, flip, mut visible)) = q_tile.iter_mut().skip(*idx).next() else {
             *idx = 0;
             return
@@ -112,7 +112,7 @@ pub fn updates(mut q_tile: Query<
         visible.0 = random::<bool>();
 
         *idx += 1
-    }*/
+    }
 }
 
 pub fn updates_entire_map_pos(
@@ -121,6 +121,6 @@ pub fn updates_entire_map_pos(
 ) {
     for (i, mut map) in q_map.iter_mut().enumerate() {
         let time = time.elapsed_seconds() * (1.1 * i as f32) * 0.1;
-        map.translation = Vec3::new(time.sin() * 100.0, time.cos() * 100.0, 0.0);
+        map.translation = Vec3::new(time.sin() * 100.0, time.cos() * 100.0, map.translation.z);
     }
 }
