@@ -154,7 +154,12 @@ fn fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         tile_texture, tile_sampler,
         input.uv, input.index_color[0],
     );
-    return texture_color * tile_color;
+    let color = texture_color * tile_color;
+    if (color.a < 0.001) {
+        discard;
+    }
+
+    return color;
 #else
     return tile_color;
 #endif

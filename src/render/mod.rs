@@ -1,7 +1,7 @@
 mod texture_array;
 
 use bevy::core_pipeline::core_2d::Transparent2d;
-use bevy::core_pipeline::core_3d::Transparent3d;
+use bevy::core_pipeline::core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d};
 use bevy::core_pipeline::tonemapping::{
     get_lut_bind_group_layout_entries, DebandDither, Tonemapping,
 };
@@ -35,6 +35,11 @@ use bevy::utils::FloatOrd;
 use crate::{map::*, tiles::*};
 use crate::render::texture_array::{create_texture_array, update_texture_array};
 
+#[cfg(feature = "use_3d_pipeline")]
+type Transparent = Transparent3d;
+#[cfg(not(feature = "use_3d_pipeline"))]
+type Transparent = Transparent2d;
+
 pub struct TileMapRendererPlugin;
 impl Plugin for TileMapRendererPlugin {
     fn build(&self, app: &mut App) {
@@ -55,7 +60,7 @@ impl Plugin for TileMapRendererPlugin {
             .init_resource::<SpecializedRenderPipelines<TilemapPipeline>>()
             .init_resource::<ExtractedTilemaps>()
             .init_resource::<PreparedTilemaps>()
-            .add_render_command::<Transparent2d, DrawTilemap>()
+            .add_render_command::<Transparent, DrawTilemap>()
             .add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
             .add_systems(Render, (
@@ -309,6 +314,29 @@ impl SpecializedRenderPipeline for TilemapPipeline {
             false => TextureFormat::bevy_default(),
         };
 
+        #[cfg(feature = "use_3d_pipeline")]
+        let depth = {
+            println!("We will be writing to depth! v2!");
+            Some(DepthStencilState {
+                format: CORE_3D_DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::GreaterEqual,
+                stencil: StencilState {
+                    front: StencilFaceState::IGNORE,
+                    back: StencilFaceState::IGNORE,
+                    read_mask: 0,
+                    write_mask: 0,
+                },
+                bias: DepthBiasState {
+                    constant: 0,
+                    slope_scale: 0.0,
+                    clamp: 0.0,
+                },
+            })
+        };
+        #[cfg(not(feature = "use_3d_pipeline"))]
+        let depth = None;
+
         RenderPipelineDescriptor {
             label: Some("tilemap_pipeline".into()),
             layout,
@@ -339,7 +367,7 @@ impl SpecializedRenderPipeline for TilemapPipeline {
                 topology: PrimitiveTopology::TriangleList,
                 strip_index_format: None,
             },
-            depth_stencil: None,
+            depth_stencil: depth,
             multisample: MultisampleState {
                 count: key.msaa_samples as u32,
                 mask: !0,
@@ -452,6 +480,7 @@ fn extract_tilemap_textures(
             return
         };
         if tilemap.texture.is_none() && texture.verify_ready(&images) {
+            println!("extracting textures!");
             tilemap.texture = Some(ExtractedTileset::new(
                 entity,
                 texture.clone_weak(),
@@ -581,7 +610,7 @@ fn prepare_tilemaps(
 }
 
 fn queue_tilemaps(
-    draw_functions: Res<DrawFunctions<Transparent2d>>,
+    draw_functions: Res<DrawFunctions<Transparent>>,
     extracted_tilemaps: Res<ExtractedTilemaps>,
     tilemap_pipeline: Res<TilemapPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<TilemapPipeline>>,
@@ -593,7 +622,7 @@ fn queue_tilemaps(
         &ExtractedView,
         Option<&Tonemapping>,
         Option<&DebandDither>,
-        &mut RenderPhase<Transparent2d>,
+        &mut RenderPhase<Transparent>,
     )>,
 ) {
     let draw_tilemap_function = draw_functions.read().id::<DrawTilemap>();
@@ -630,16 +659,31 @@ fn queue_tilemaps(
             // These items will be sorted by depth with other phase items
             let sort_key = FloatOrd(extracted_tilemap.transform.translation().z);
 
-            // Add the item to the render phase
-            transparent_phase.add(Transparent2d {
-                draw_function: draw_function,
-                pipeline,
-                entity: *entity,
-                sort_key,
-                // I think this needs to be at least 1
-                batch_range: 0..1,
-                dynamic_offset: None,
-            });
+            #[cfg(feature = "use_3d_pipeline")]
+            {
+                transparent_phase.add(Transparent {
+                    distance: extracted_tilemap.transform.translation().z,
+                    draw_function: draw_function,
+                    pipeline,
+                    entity: *entity,
+                    batch_range: 0..1,
+                    dynamic_offset: None,
+                });
+            }
+            #[cfg(not(feature = "use_3d_pipeline"))]
+            {
+                // Add the item to the render phase
+                transparent_phase.add(Transparent {
+                    distance: extracted_tilemap.transform.translation().z,
+                    draw_function: draw_function,
+                    pipeline,
+                    entity: *entity,
+                    sort_key,
+                    // I think this needs to be at least 1
+                    batch_range: 0..1,
+                    dynamic_offset: None,
+                });
+            }
         }
     }
 }
