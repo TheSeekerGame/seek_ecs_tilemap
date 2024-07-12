@@ -674,7 +674,6 @@ fn queue_tilemaps(
             {
                 // Add the item to the render phase
                 transparent_phase.add(Transparent {
-                    distance: extracted_tilemap.transform.translation().z,
                     draw_function: draw_function,
                     pipeline,
                     entity: *entity,
