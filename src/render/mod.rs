@@ -1,7 +1,8 @@
 mod texture_array;
+mod bg_pass_node;
 
 use bevy::core_pipeline::core_2d::Transparent2d;
-use bevy::core_pipeline::core_3d::{CORE_3D_DEPTH_FORMAT, Transparent3d};
+use bevy::core_pipeline::core_3d::{CORE_3D_DEPTH_FORMAT, Opaque3d, Transparent3d};
 use bevy::core_pipeline::tonemapping::{
     get_lut_bind_group_layout_entries, DebandDither, Tonemapping,
 };
@@ -30,6 +31,7 @@ use std::borrow::Cow;
 use std::thread::sleep;
 use std::time::Duration;
 use bevy::asset::load_internal_asset;
+use bevy::core_pipeline::prepass::Opaque3dPrepass;
 use bevy::utils::FloatOrd;
 
 use crate::{map::*, tiles::*};
@@ -60,13 +62,17 @@ impl Plugin for TileMapRendererPlugin {
             .init_resource::<SpecializedRenderPipelines<TilemapPipeline>>()
             .init_resource::<ExtractedTilemaps>()
             .init_resource::<PreparedTilemaps>()
-            .add_render_command::<Transparent, DrawTilemap>()
-            .add_systems(ExtractSchedule, extract_tilemaps)
+            .add_render_command::<Transparent, DrawTilemap>();
+
+        render_app.add_render_command::<Opaque3d, DrawTilemapBg>();
+
+        render_app.add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
             .add_systems(Render, (
                 prepare_tilemaps.in_set(RenderSet::Prepare),
                 queue_tilemaps.in_set(RenderSet::Queue),
             ));
+
     }
 
     fn finish(&self, app: &mut App) {
@@ -95,6 +101,11 @@ struct ExtractedTilemap {
 
 #[derive(Resource, Default)]
 struct ExtractedTilemaps {
+    map: EntityHashMap<ExtractedTilemap>,
+}
+
+#[derive(Resource, Default)]
+struct ExtractedBgTilemaps {
     map: EntityHashMap<ExtractedTilemap>,
 }
 
@@ -316,7 +327,6 @@ impl SpecializedRenderPipeline for TilemapPipeline {
 
         #[cfg(feature = "use_3d_pipeline")]
         let depth = {
-            println!("We will be writing to depth! v2!");
             Some(DepthStencilState {
                 format: CORE_3D_DEPTH_FORMAT,
                 depth_write_enabled: true,
@@ -480,7 +490,6 @@ fn extract_tilemap_textures(
             return
         };
         if tilemap.texture.is_none() && texture.verify_ready(&images) {
-            println!("extracting textures!");
             tilemap.texture = Some(ExtractedTileset::new(
                 entity,
                 texture.clone_weak(),
@@ -530,7 +539,6 @@ fn prepare_tilemaps(
                             &queue,
                             texture,
                         );
-                        println!("preparing tileset!");
                         let bg = device.create_bind_group(
                             "tile_bind_group",
                             &tilemap_pipeline.tiles_layout,
@@ -585,7 +593,6 @@ fn prepare_tilemaps(
                     &queue,
                     texture,
                 );
-                println!("preparing tileset!");
                 let bg = device.create_bind_group(
                     "tile_bind_group",
                     &tilemap_pipeline.tiles_layout,
@@ -611,6 +618,7 @@ fn prepare_tilemaps(
 
 fn queue_tilemaps(
     draw_functions: Res<DrawFunctions<Transparent>>,
+    op_draw_functions: Res<DrawFunctions<Opaque3d>>,
     extracted_tilemaps: Res<ExtractedTilemaps>,
     tilemap_pipeline: Res<TilemapPipeline>,
     mut pipelines: ResMut<SpecializedRenderPipelines<TilemapPipeline>>,
@@ -623,23 +631,30 @@ fn queue_tilemaps(
         Option<&Tonemapping>,
         Option<&DebandDither>,
         &mut RenderPhase<Transparent>,
+        &mut RenderPhase<Opaque3d>,
     )>,
 ) {
     let draw_tilemap_function = draw_functions.read().id::<DrawTilemap>();
+    let draw_op_tilemap_function = op_draw_functions.read().id::<DrawTilemapBg>();
     let draw_bland_tilemap_function = draw_functions.read().id::<DrawTilemap>();
 
-    for (view_entity, visible_entities, view, tonemapping, dither, mut transparent_phase) in &mut views {
+    for (view_entity, visible_entities, view, tonemapping, dither, mut transparent_phase, mut opaque_phase) in &mut views {
 
         transparent_phase
             .items
             .reserve(extracted_tilemaps.map.len());
 
         for (entity, extracted_tilemap) in extracted_tilemaps.map.iter() {
-            let draw_function = if extracted_tilemap.texture.is_some() {
-                draw_tilemap_function
-            } else {
-                draw_bland_tilemap_function
-            };
+            // These items will be sorted by depth with other phase items
+            let z = extracted_tilemap.transform.translation().z;
+            let sort_key = FloatOrd(z);
+            let mut use_opaque = false;
+            #[cfg(feature = "background_tiles")]
+            {
+                if z < -0.0 {
+                    use_opaque = true;
+                }
+            }
             let pipeline = pipelines.specialize(
                 &pipeline_cache,
                 &tilemap_pipeline,
@@ -656,19 +671,37 @@ fn queue_tilemaps(
                 continue;
             }*/
 
-            // These items will be sorted by depth with other phase items
-            let sort_key = FloatOrd(extracted_tilemap.transform.translation().z);
+
+            let draw_function = if extracted_tilemap.texture.is_some() {
+                draw_tilemap_function
+            } else {
+                //draw_bland_tilemap_function
+                draw_tilemap_function
+            };
+
 
             #[cfg(feature = "use_3d_pipeline")]
             {
-                transparent_phase.add(Transparent {
-                    distance: extracted_tilemap.transform.translation().z,
-                    draw_function: draw_function,
-                    pipeline,
-                    entity: *entity,
-                    batch_range: 0..1,
-                    dynamic_offset: None,
-                });
+                if use_opaque {
+                    opaque_phase.add(Opaque3d {
+                        draw_function: draw_op_tilemap_function,
+                        entity: *entity,
+                        asset_id: Default::default(),
+                        batch_range: 0..1,
+                        dynamic_offset: None,
+                        pipeline,
+                    });
+                } else {
+                    transparent_phase.add(Transparent {
+                        distance: extracted_tilemap.transform.translation().z,
+                        draw_function,
+                        pipeline,
+                        entity: *entity,
+                        batch_range: 0..1,
+                        dynamic_offset: None,
+                    });
+                }
+
             }
             #[cfg(not(feature = "use_3d_pipeline"))]
             {
@@ -776,12 +809,21 @@ impl GpuTilemapChunks {
 }
 
 /// [`RenderCommand`]s for TileMap rendering.
+type DrawTilemapBg = (
+    SetItemPipeline,
+    SetTilemapViewBindGroup<0>,
+    SetTilemapBindGroup<1>,
+    SetTilesetBindGroup<2>,
+    DrawTileMapBg,
+);
+
+/// [`RenderCommand`]s for TileMap rendering.
 type DrawTilemap = (
     SetItemPipeline,
     SetTilemapViewBindGroup<0>,
     SetTilemapBindGroup<1>,
     SetTilesetBindGroup<2>,
-    DrawTileMap,
+    DrawTileMapBg,
 );
 
 pub struct SetTilemapViewBindGroup<const I: usize>;
@@ -857,6 +899,33 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilesetBindGroup<I> {
 
 struct DrawTileMap {}
 impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
+    type Param = SRes<ExtractedTilemaps>;
+    type ViewQuery = ();
+    type ItemQuery = ();
+
+    fn render<'w>(
+        item: &P,
+        _view: (),
+        _query: Option<()>,
+        tilemaps: SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let tilemaps = tilemaps.into_inner();
+        let Some(tilemap) = tilemaps.map.get(&item.entity()) else {
+            return RenderCommandResult::Failure;
+        };
+        let chunk_size = tilemap.chunks.chunk_size;
+        let chunks = tilemap.chunks.n_chunks;
+
+        let n_verts = chunk_size.x * chunk_size.y * 6;
+        let n_insts = chunks.x * chunks.y;
+        pass.draw(0..n_verts, 0..n_insts);
+        RenderCommandResult::Success
+    }
+}
+
+struct DrawTileMapBg {}
+impl<P: PhaseItem> RenderCommand<P> for crate::render::DrawTileMapBg {
     type Param = SRes<ExtractedTilemaps>;
     type ViewQuery = ();
     type ItemQuery = ();

@@ -1,7 +1,7 @@
 [package]
 name = "seek_ecs_tilemap"
 description = "Tilemap renderer experiment for Bevy with the goal of reducing CPU overhead. Mostly API-compatible with `bevy_ecs_tilemap`."
-version = "0.1.14"
+version = "0.1.15"
 authors = ["Ida Iyes"]
 homepage = "https://github.com/TheSeekerGame/seek_ecs_tilemap"
 repository = "https://github.com/TheSeekerGame/seek_ecs_tilemap"
@@ -11,6 +11,10 @@ edition = "2021"
 default = ["render"]
 atlas = []
 use_3d_pipeline = []
+# Enable this to make tilemap tiles with z < 0.0 write to Opaque3d instead of Transparent3d
+# only works if use_3d_pipeline is enabled
+background_tiles = []
+
 render = [
     "bevy/bevy_asset",
     "bevy/bevy_render",

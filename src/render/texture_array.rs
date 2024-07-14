@@ -48,7 +48,7 @@ pub fn create_texture_array(
         mipmap_filter: FilterMode::Nearest,
         ..default()
     });
-    println!("filtermode: {:?}", extracted_texture.filtering);
+
     TextureArray {
         texture,
         view,
