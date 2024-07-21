@@ -68,6 +68,7 @@ impl Plugin for TileMapRendererPlugin {
 
         render_app.add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
+            .add_systems(ExtractSchedule, remove_despawned_tilemaps)
             .add_systems(Render, (
                 prepare_tilemaps.in_set(RenderSet::Prepare),
                 queue_tilemaps.in_set(RenderSet::Queue),
@@ -470,6 +471,15 @@ fn extract_tilemaps(
                 });
             }
         };
+    }
+}
+
+fn remove_despawned_tilemaps(
+    mut extracted_tilemaps: ResMut<ExtractedTilemaps>,
+    mut removed: Extract<RemovedComponents<TilemapChunks>>,
+) {
+    for removed in removed.read() {
+        extracted_tilemaps.map.remove(&removed);
     }
 }
 
