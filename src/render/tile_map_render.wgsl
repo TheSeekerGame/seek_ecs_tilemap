@@ -76,19 +76,13 @@ fn vertex(input: VertexInput) -> VertexOutput {
 
     // "Discard" the vertex if the tile is not visible
     // (visibility bit is 0 or alpha in the color is 0)
-    let check_visibility = tile_texel.b & (1u << 0u);
+    let check_visibility = tile_texel.r & (1u << 24u);
     let check_alpha = tile_texel.g & 0xFF000000;
     if check_visibility == 0u || check_alpha == 0u {
         return output; // FIXME: temporary
     }
 
-    output.index_color = tile_texel.rg;
-
-    // FIXME: this is temporary: set the tile color based on the
-    // tile index, for debugging, so we can visualize the geometry.
-    // The chunk texture is broken, doesn't actually seem to contain
-    // the colors. After fixing it, remove this line.
-    // output.index_color.y = (tile_index * 16) | 0xFF000000u;
+    output.index_color = vec2(tile_texel.r & 0xFFFF, tile_texel.g);
 
     let tile_vertex_model = TILE_VERT_POSITIONS[tile_vertex_index];
 
@@ -96,9 +90,9 @@ fn vertex(input: VertexInput) -> VertexOutput {
     // UVs: we can compute them from the positions ;)
     // Vertex positions are the corners of the quad.
     // Just take them and flip the sign if we need to flip the tile
-    let flip_x = tile_texel.b & (1u << 1u);
-    let flip_y = tile_texel.b & (1u << 2u);
-    let flip_d = tile_texel.b & (1u << 3u);
+    let flip_x = tile_texel.r & (1u << 25u);
+    let flip_y = tile_texel.r & (1u << 26u);
+    let flip_d = tile_texel.r & (1u << 27u);
     var uv = tile_vertex_model.xy;
     // for diagonal flip, check if the sign is the same;
     // this indicates we are processing one of the diagonal verts
@@ -155,14 +149,14 @@ fn fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         input.uv, input.index_color[0],
     );
     let color = texture_color * tile_color;
+#else
+    let color = tile_color;
+#endif
+
     if (color.a < 0.001) {
         discard;
     }
-
     return color;
-#else
-    return tile_color;
-#endif
 }
 
 fn affine3_to_square(affine: mat3x4<f32>) -> mat4x4<f32> {

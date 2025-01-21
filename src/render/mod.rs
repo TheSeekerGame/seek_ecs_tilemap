@@ -738,14 +738,14 @@ impl GpuTilemapChunks {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba32Uint,
+            format: TextureFormat::Rg32Uint,
             usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
         let texture = device.create_texture(&desc_texture);
         let desc_view = TextureViewDescriptor {
             label: Some("seek_ecs_tilemap_chunks"),
-            format: Some(TextureFormat::Rgba32Uint),
+            format: Some(TextureFormat::Rg32Uint),
             dimension: Some(TextureViewDimension::D2Array),
             aspect: TextureAspect::All,
             base_mip_level: 0,
@@ -806,7 +806,7 @@ impl GpuTilemapChunks {
         };
         let data_layout = ImageDataLayout {
             offset: 0,
-            bytes_per_row: Some(64 * 16),
+            bytes_per_row: Some(64 * 8),
             rows_per_image: Some(64),
         };
         let size = Extent3d {

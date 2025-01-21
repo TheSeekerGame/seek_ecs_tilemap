@@ -349,8 +349,8 @@ pub(crate) struct TilemapChunk {
 
 impl TilemapChunks {
     /// Length of a contiguous slice representing one sub-chunk
-    /// Sub-chunks are always 64x64 * 16 bytes (TextureFormat::Rgba32Uint)
-    pub(crate) const SUBCHUNK_DATA_LEN: usize = 64 * 64 * 16;
+    /// Sub-chunks are always 64x64 * 8 bytes (TextureFormat::Rg32Uint)
+    pub(crate) const SUBCHUNK_DATA_LEN: usize = 64 * 64 * 8;
 
     pub(crate) fn init(&mut self, map_size: UVec2, chunk_size: UVec2) {
         assert!(chunk_size.x <= 2048 && chunk_size.y <= 2048);
@@ -385,15 +385,15 @@ impl TilemapChunks {
         let tile_sub_y = tile_y % 64;
         let i_chunk = (chunk_y * self.n_chunks.x + chunk_x) as usize;
         let chunk = &mut self.chunks[i_chunk];
-        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize * 64 * 64 * 16;
-        let tile_offset = subchunk_offset + ((tile_sub_y * 64 + tile_sub_x) * 16) as usize;
-        let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 16)];
+        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize * 64 * 64 * 8;
+        let tile_offset = subchunk_offset + ((tile_sub_y * 64 + tile_sub_x) * 8) as usize;
+        let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 8)];
         // GPUs are little endian
-        let index_bytes = index.0.to_le_bytes();
+        let index_bytes = u16::try_from(index.0).unwrap().to_le_bytes();
         let color_bytes = color.0.as_rgba_u32().to_le_bytes();
-        tile_bytes[0..4].copy_from_slice(&index_bytes);
+        tile_bytes[0..2].copy_from_slice(&index_bytes);
         tile_bytes[4..8].copy_from_slice(&color_bytes);
-        tile_bytes[8] = ((visible.0 as u8) << 0)
+        tile_bytes[3] = ((visible.0 as u8) << 0)
             | ((flip.x as u8) << 1)
             | ((flip.y as u8) << 2)
             | ((flip.d as u8) << 3);
