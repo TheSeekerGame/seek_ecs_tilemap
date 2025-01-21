@@ -203,6 +203,7 @@ impl From<Vec2> for TilemapTileSize {
         TilemapTileSize { x, y }
     }
 }
+
 /// Size of the tiles on the grid in pixels.
 /// This can be used to overlay tiles on top of each other.
 /// Ex. A 16x16 pixel tile can be overlapped by 8 pixels by using
@@ -384,7 +385,7 @@ impl TilemapChunks {
         let tile_sub_y = tile_y % 64;
         let i_chunk = (chunk_y * self.n_chunks.x + chunk_x) as usize;
         let chunk = &mut self.chunks[i_chunk];
-        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize * 64 * 64 * 16;;
+        let subchunk_offset = (subchunk_y * self.n_subchunks.x + subchunk_x) as usize * 64 * 64 * 16;
         let tile_offset = subchunk_offset + ((tile_sub_y * 64 + tile_sub_x) * 16) as usize;
         let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 16)];
         // GPUs are little endian
@@ -448,4 +449,12 @@ impl TilemapChunks {
             chunk.dirty_bitmap = default();
         }
     }
+}
+
+pub(crate) fn clear_all_dirty_bitmaps(
+    mut q_tm: Query<&mut TilemapChunks>,
+) {
+    q_tm.iter_mut().for_each(|mut chunks| {
+        chunks.clear_all_dirty_bitmaps();
+    });
 }

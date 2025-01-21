@@ -18,6 +18,7 @@ impl Plugin for TilemapPlugin {
         use crate::tiles::*;
 
         app.add_systems(Update, set_texture_to_copy_src);
+        app.add_systems(PreUpdate, clear_all_dirty_bitmaps);
 
         app.register_type::<TilemapId>()
             .register_type::<TilemapSize>()
