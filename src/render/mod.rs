@@ -1,5 +1,4 @@
 mod texture_array;
-mod bg_pass_node;
 
 use bevy::core_pipeline::core_2d::Transparent2d;
 use bevy::core_pipeline::core_3d::{CORE_3D_DEPTH_FORMAT, Opaque3d, Transparent3d};
@@ -64,11 +63,8 @@ impl Plugin for TileMapRendererPlugin {
             .init_resource::<PreparedTilemaps>()
             .add_render_command::<Transparent, DrawTilemap>();
 
-        render_app.add_render_command::<Opaque3d, DrawTilemapBg>();
-
         render_app.add_systems(ExtractSchedule, extract_tilemaps)
             .add_systems(ExtractSchedule, extract_tilemap_textures)
-            .add_systems(ExtractSchedule, remove_despawned_tilemaps)
             .add_systems(Render, (
                 prepare_tilemaps.in_set(RenderSet::Prepare),
                 queue_tilemaps.in_set(RenderSet::Queue),
@@ -445,7 +441,11 @@ fn extract_tilemaps(
         &TilemapTileSize,
         &TilemapGridSize,
     )>>,
+    mut removed: Extract<RemovedComponents<TilemapChunks>>,
 ) {
+    for removed in removed.read() {
+        extracted_tilemaps.map.remove(&removed);
+    }
     for (entity, view_visibility, transform, chunks, tile_size, grid_size) in tilemap_query.iter() {
         // TODO: in order for this to actually work, we need a system in the
         // main world that knows how to do frustum culling for tilemaps
@@ -471,15 +471,6 @@ fn extract_tilemaps(
                 });
             }
         };
-    }
-}
-
-fn remove_despawned_tilemaps(
-    mut extracted_tilemaps: ResMut<ExtractedTilemaps>,
-    mut removed: Extract<RemovedComponents<TilemapChunks>>,
-) {
-    for removed in removed.read() {
-        extracted_tilemaps.map.remove(&removed);
     }
 }
 
@@ -819,21 +810,12 @@ impl GpuTilemapChunks {
 }
 
 /// [`RenderCommand`]s for TileMap rendering.
-type DrawTilemapBg = (
-    SetItemPipeline,
-    SetTilemapViewBindGroup<0>,
-    SetTilemapBindGroup<1>,
-    SetTilesetBindGroup<2>,
-    DrawTileMapBg,
-);
-
-/// [`RenderCommand`]s for TileMap rendering.
 type DrawTilemap = (
     SetItemPipeline,
     SetTilemapViewBindGroup<0>,
     SetTilemapBindGroup<1>,
     SetTilesetBindGroup<2>,
-    DrawTileMapBg,
+    DrawTileMap,
 );
 
 pub struct SetTilemapViewBindGroup<const I: usize>;
@@ -909,33 +891,6 @@ impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetTilesetBindGroup<I> {
 
 struct DrawTileMap {}
 impl<P: PhaseItem> RenderCommand<P> for DrawTileMap {
-    type Param = SRes<ExtractedTilemaps>;
-    type ViewQuery = ();
-    type ItemQuery = ();
-
-    fn render<'w>(
-        item: &P,
-        _view: (),
-        _query: Option<()>,
-        tilemaps: SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        let tilemaps = tilemaps.into_inner();
-        let Some(tilemap) = tilemaps.map.get(&item.entity()) else {
-            return RenderCommandResult::Failure;
-        };
-        let chunk_size = tilemap.chunks.chunk_size;
-        let chunks = tilemap.chunks.n_chunks;
-
-        let n_verts = chunk_size.x * chunk_size.y * 6;
-        let n_insts = chunks.x * chunks.y;
-        pass.draw(0..n_verts, 0..n_insts);
-        RenderCommandResult::Success
-    }
-}
-
-struct DrawTileMapBg {}
-impl<P: PhaseItem> RenderCommand<P> for crate::render::DrawTileMapBg {
     type Param = SRes<ExtractedTilemaps>;
     type ViewQuery = ();
     type ItemQuery = ();
