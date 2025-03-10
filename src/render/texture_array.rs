@@ -1,10 +1,14 @@
-use bevy::asset::Handle;
-use bevy::prelude::{Component, default, Image, Reflect};
-use bevy::render::render_resource::{AddressMode, Extent3d, FilterMode, ImageCopyTexture, ImageDataLayout, Origin3d, Sampler, SamplerDescriptor, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension};
-use bevy::render::renderer::{RenderDevice, RenderQueue};
-use bevy::render::texture::TextureFormatPixelInfo;
 use crate::map::TilesetTexture;
 use crate::render::{ExtractedTileset, ExtractedTilesetTexture};
+use bevy::asset::Handle;
+use bevy::image::TextureFormatPixelInfo;
+use bevy::prelude::{default, Component, Image, Reflect};
+use bevy::render::render_resource::{
+    AddressMode, Extent3d, FilterMode, ImageCopyTexture, ImageDataLayout, Origin3d, Sampler,
+    SamplerDescriptor, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureUsages,
+    TextureView, TextureViewDescriptor, TextureViewDimension,
+};
+use bevy::render::renderer::{RenderDevice, RenderQueue};
 
 pub struct TextureArray {
     texture: Texture,
@@ -90,23 +94,31 @@ pub fn update_texture_array(
                 for y in 0..tile_height {
                     let src_start = ((tile_y + y) * image_width + tile_x) * bytes_per_pixel;
                     let src_end = src_start + (tile_width * bytes_per_pixel);
-                    
+
                     let dst_start = ((tile_height - 1 - y) * tile_width * bytes_per_pixel) as usize;
                     let dst_end = dst_start + (tile_width * bytes_per_pixel) as usize;
 
                     if src_end as usize > image_data.data.len() {
-                        println!("Error: Tile data exceeds image bounds for tile {}", tile_index);
+                        println!(
+                            "Error: Tile data exceeds image bounds for tile {}",
+                            tile_index
+                        );
                         break;
                     }
 
-                    tile_data[dst_start..dst_end].copy_from_slice(&image_data.data[src_start as usize..src_end as usize]);
+                    tile_data[dst_start..dst_end]
+                        .copy_from_slice(&image_data.data[src_start as usize..src_end as usize]);
                 }
 
                 queue.write_texture(
                     ImageCopyTexture {
                         texture: &texture_array.texture,
                         mip_level: 0,
-                        origin: Origin3d { x: 0, y: 0, z: tile_index },
+                        origin: Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: tile_index,
+                        },
                         aspect: TextureAspect::All,
                     },
                     &tile_data,
@@ -122,14 +134,14 @@ pub fn update_texture_array(
                     },
                 );
             }
-        },
+        }
         ExtractedTilesetTexture::Vector(image_data_vec) => {
             for (i, image_data) in image_data_vec.iter().enumerate() {
                 unimplemented!()
             }
-        },
+        }
         ExtractedTilesetTexture::TextureContainer(image_data) => {
             unimplemented!()
-        },
+        }
     }
 }

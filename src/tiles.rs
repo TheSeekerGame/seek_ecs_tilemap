@@ -1,11 +1,10 @@
-use bevy::prelude::*;
 use bevy::ecs::entity::MapEntities;
 use bevy::ecs::reflect::ReflectMapEntities;
+use bevy::prelude::*;
 
 use crate::map::*;
 
-pub(crate) fn plugin(_app: &mut App) {
-}
+pub(crate) fn plugin(_app: &mut App) {}
 
 /// Bundle for tile entities.
 #[derive(Bundle, Default, Clone, Copy, Debug)]

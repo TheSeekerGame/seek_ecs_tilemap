@@ -40,14 +40,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let texture_handle: Handle<Image> = asset_server.load("dirt-tiles.png");
     /* commands.spawn(SpriteBundle {
-         texture: texture_handle.clone(),
-         transform: Transform::from_xyz(0.0, 0.0, 0.0),
-         ..default()
-     });*/
+        texture: texture_handle.clone(),
+        transform: Transform::from_xyz(0.0, 0.0, 0.0),
+        ..default()
+    });*/
 
     for i in 1..5u32 {
         let width = 25 * i;
-        let height = 25 * i;//random::<u8>() as u32 * i;
+        let height = 25 * i; //random::<u8>() as u32 * i;
         let e_tilemap = commands
             .spawn(TilemapBundle {
                 grid_size: TilemapGridSize::new(16.0, 16.0),
@@ -59,7 +59,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 tile_size: TilemapTileSize::new(16.0, 16.0),
                 chunks: TilemapChunks::default(),
                 //transform: Transform::from_scale(Vec3::splat(0.25)),
-                transform: Transform::from_scale(Vec3::splat(1.0 / (i as f32))).with_translation(Vec3::new(0.0, 0.0, i as f32)),
+                transform: Transform::from_scale(Vec3::splat(1.0 / (i as f32)))
+                    .with_translation(Vec3::new(0.0, 0.0, i as f32)),
                 global_transform: Default::default(),
                 visibility: Default::default(),
                 inherited_visibility: Default::default(),
@@ -76,7 +77,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     tilemap_id: TilemapId(e_tilemap),
                     //visible: TileVisible(y % 2 == 0 || x % 2 == 0),
                     visible: TileVisible::default(),
-                    flip: TileFlip { x: false, y: false, d: false },
+                    flip: TileFlip {
+                        x: false,
+                        y: false,
+                        d: false,
+                    },
                     //color: TileColor(Srgba::rgb_u8(((x *25) % 256) as u8, ((y * 25) % 256) as u8, 0).into()),
                     color: TileColor(Color::WHITE.into()),
                     old_position: default(),
@@ -86,28 +91,25 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     }
 }
 
-
-pub fn updates(mut q_tile: Query<
-    (
+pub fn updates(
+    mut q_tile: Query<(
         &TilemapId,
         &TilePos,
         &mut TileColor,
         &mut TileFlip,
         &mut TileVisible,
-    )>, mut idx: Local<usize>,
+    )>,
+    mut idx: Local<usize>,
 ) {
     for i in 0..10 {
-        let Some((id, pos, mut color, flip, mut visible)) = q_tile.iter_mut().skip(*idx).next() else {
+        let Some((id, pos, mut color, flip, mut visible)) = q_tile.iter_mut().skip(*idx).next()
+        else {
             *idx = 0;
-            return
+            return;
         };
 
-        *color = TileColor(Color::rgba(
-            random::<f32>(),
-            random::<f32>(),
-            random::<f32>(),
-            1.0,
-        ).into());
+        *color =
+            TileColor(Color::rgba(random::<f32>(), random::<f32>(), random::<f32>(), 1.0).into());
 
         visible.0 = random::<bool>();
 

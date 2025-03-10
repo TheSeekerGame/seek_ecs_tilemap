@@ -2,6 +2,7 @@ use bevy::ecs::entity::MapEntities;
 use bevy::ecs::reflect::ReflectMapEntities;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureUsages};
+use bevy::render::sync_world::SyncToRenderWorld;
 
 use crate::tiles::*;
 
@@ -22,6 +23,7 @@ pub struct TilemapBundle {
     pub visibility: Visibility,
     pub inherited_visibility: InheritedVisibility,
     pub view_visibility: ViewVisibility,
+    pub sync: SyncToRenderWorld,
 }
 
 /// A component which stores a reference to the tilemap entity.
@@ -84,7 +86,7 @@ impl From<UVec2> for TilemapSize {
     }
 }
 
-#[derive(Component, Reflect, Clone, Debug, Hash, PartialEq, Eq, )]
+#[derive(Component, Reflect, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum TilesetTexture {
     /// All textures for tiles are inside a single image asset directly next to each other
     Single(Handle<Image>),
@@ -126,7 +128,6 @@ impl TilesetTexture {
             }
         })
     }
-
 
     /// Sets images with the `COPY_SRC` flag.
     pub fn set_images_to_copy_src(&self, images: &mut ResMut<Assets<Image>>) {
@@ -390,7 +391,7 @@ impl TilemapChunks {
         let tile_bytes = &mut chunk.data[tile_offset..(tile_offset + 8)];
         // GPUs are little endian
         let index_bytes = u16::try_from(index.0).unwrap().to_le_bytes();
-        let color_bytes = color.0.as_rgba_u32().to_le_bytes();
+        let color_bytes = color.0.to_linear().as_u32().to_le_bytes();
         tile_bytes[0..2].copy_from_slice(&index_bytes);
         tile_bytes[4..8].copy_from_slice(&color_bytes);
         tile_bytes[3] = ((visible.0 as u8) << 0)
@@ -451,9 +452,7 @@ impl TilemapChunks {
     }
 }
 
-pub(crate) fn clear_all_dirty_bitmaps(
-    mut q_tm: Query<&mut TilemapChunks>,
-) {
+pub(crate) fn clear_all_dirty_bitmaps(mut q_tm: Query<&mut TilemapChunks>) {
     q_tm.iter_mut().for_each(|mut chunks| {
         chunks.clear_all_dirty_bitmaps();
     });

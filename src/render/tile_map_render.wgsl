@@ -127,7 +127,7 @@ fn vertex(input: VertexInput) -> VertexOutput {
     );
     let vertex_world =
         affine3_to_square(tilemap_info.transform_affine) * vertex_model;
-    let vertex_clip = view.view_proj * vertex_world;
+    let vertex_clip = view.clip_from_world * vertex_world;
 
     output.position = vertex_clip;
 
