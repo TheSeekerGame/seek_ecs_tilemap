@@ -640,13 +640,13 @@ fn queue_tilemaps(
             // These items will be sorted by depth with other phase items
             let z = extracted_tilemap.transform.translation().z;
             let sort_key = FloatOrd(z);
-            let mut use_opaque = false;
-            #[cfg(feature = "background_tiles")]
-            {
-                if z < -0.0 {
-                    use_opaque = true;
-                }
-            }
+            // let mut use_opaque = false;
+            // #[cfg(feature = "background_tiles")]
+            // {
+            //     if z < -0.0 {
+            //         use_opaque = true;
+            //     }
+            // }
             let pipeline = pipelines.specialize(
                 &pipeline_cache,
                 &tilemap_pipeline,
@@ -665,27 +665,27 @@ fn queue_tilemaps(
 
             #[cfg(feature = "use_3d_pipeline")]
             {
-                if use_opaque {
-                    let opaque_phase = opaque_render_phases.get_mut(&view_entity).unwrap();
-                    opaque_phase.add(Opaque3d {
-                        draw_function: op_draw_functions.read().id::<DrawTilemap>(),
-                        entity: *entity,
-                        asset_id: Default::default(),
-                        batch_range: 0..1,
-                        dynamic_offset: None,
-                        pipeline,
-                    });
-                } else {
+                // if use_opaque {
+                //     let opaque_phase = opaque_render_phases.get_mut(&view_entity).unwrap();
+                //     opaque_phase.add(Opaque3d {
+                //         draw_function: op_draw_functions.read().id::<DrawTilemap>(),
+                //         entity: *entity,
+                //         asset_id: Default::default(),
+                //         batch_range: 0..1,
+                //         dynamic_offset: None,
+                //         pipeline,
+                //     });
+                // } else {
                     let transparent_phase = transparent_render_phases.get_mut(&view_entity).unwrap();
                     transparent_phase.add(Transparent {
                         distance: extracted_tilemap.transform.translation().z,
                         draw_function: draw_functions.read().id::<DrawTilemap>(),
                         pipeline,
-                        entity: *entity,
+                        entity: (entity, *main_entity),
                         batch_range: 0..1,
-                        dynamic_offset: None,
+                        extra_index: PhaseItemExtraIndex(0),
                     });
-                }
+                // }
             }
             #[cfg(not(feature = "use_3d_pipeline"))]
             {
