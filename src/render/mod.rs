@@ -677,18 +677,12 @@ fn queue_tilemaps(
 
             #[cfg(feature = "use_3d_pipeline")]
             {
-                // if use_opaque {
-                //     let opaque_phase = opaque_render_phases.get_mut(&view_entity).unwrap();
-                //     opaque_phase.add(Opaque3d {
-                //         draw_function: op_draw_functions.read().id::<DrawTilemap>(),
-                //         entity: *entity,
-                //         asset_id: Default::default(),
-                //         batch_range: 0..1,
-                //         dynamic_offset: None,
-                //         pipeline,
-                //     });
-                // } else {
-                    let transparent_phase = transparent_render_phases.get_mut(&view_entity).unwrap();
+                // Safety: the render world does not always populate every phase for every view.
+                // If the expected `Transparent3d` phase is missing we simply skip adding the
+                // tile-map draw item for that view instead of panicking.
+                if let Some(mut transparent_phase) =
+                    transparent_render_phases.get_mut(&view_entity)
+                {
                     transparent_phase.add(Transparent {
                         distance: extracted_tilemap.transform.translation().z,
                         draw_function: draw_functions.read().id::<DrawTilemap>(),
@@ -697,21 +691,24 @@ fn queue_tilemaps(
                         batch_range: 0..1,
                         extra_index: PhaseItemExtraIndex(0),
                     });
-                // }
+                }
             }
             #[cfg(not(feature = "use_3d_pipeline"))]
             {
-                // Add the item to the render phase
-                let transparent_phase = transparent_render_phases.get_mut(&view_entity).unwrap();
-                transparent_phase.add(Transparent2d {
-                    draw_function: draw_functions.read().id::<DrawTilemap>(),
-                    pipeline,
-                    entity: (entity, *main_entity),
-                    sort_key,
-                    // I think this needs to be at least 1
-                    batch_range: 0..1,
-                    extra_index: PhaseItemExtraIndex::NONE,
-                });
+                // Add the item to the render phase if it exists for this view.
+                if let Some(mut transparent_phase) =
+                    transparent_render_phases.get_mut(&view_entity)
+                {
+                    transparent_phase.add(Transparent2d {
+                        draw_function: draw_functions.read().id::<DrawTilemap>(),
+                        pipeline,
+                        entity: (entity, *main_entity),
+                        sort_key,
+                        // I think this needs to be at least 1
+                        batch_range: 0..1,
+                        extra_index: PhaseItemExtraIndex::NONE,
+                    });
+                }
             }
         }
     }
