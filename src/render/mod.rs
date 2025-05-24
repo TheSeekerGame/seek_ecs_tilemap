@@ -401,14 +401,29 @@ impl SpecializedRenderPipeline for TilemapPipeline {
 
 fn update_tilemap_chunks(
     mut q_map: Query<(&mut TilemapChunks, &TilemapSize)>,
-    q_tile: Query<(
-        &TilemapId,
-        &TilePos,
-        Ref<TileTextureIndex>,
-        Ref<TileColor>,
-        Ref<TileFlip>,
-        Ref<TileVisible>,
-    )>,
+    // Only fetch tiles whose texture, colour, flip or visibility was *added* this frame
+    // or has changed since the previous frame.  In a static level this means the
+    // query returns every tile exactly once (at spawn) and then stays empty.
+    q_tile: Query<
+        (
+            &TilemapId,
+            &TilePos,
+            &TileTextureIndex,
+            &TileColor,
+            &TileFlip,
+            &TileVisible,
+        ),
+        Or<(
+            Added<TileTextureIndex>,
+            Added<TileColor>,
+            Added<TileFlip>,
+            Added<TileVisible>,
+            Changed<TileTextureIndex>,
+            Changed<TileColor>,
+            Changed<TileFlip>,
+            Changed<TileVisible>,
+        )>,
+    >,
 ) {
     // first, init things if necessary
     for (mut chunks, size) in &mut q_map {
@@ -437,11 +452,8 @@ fn update_tilemap_chunks(
         let Some((ref mut chunks, _)) = last_map else {
             unreachable!()
         };
-        let tile_changed =
-            index.is_changed() || color.is_changed() || flip.is_changed() || vis.is_changed();
-        if chunks.is_added() || tile_changed {
-            chunks.set_tiledata_at(pos, &*index, &*color, &*flip, &*vis);
-        }
+        // All tiles yielded by the query were added or changed, so we always write.
+        chunks.set_tiledata_at(pos, index, color, flip, vis);
     }
 }
 
